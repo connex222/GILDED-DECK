@@ -25,7 +25,7 @@ function snapshotRoom(room) {
   return {
     code: room.code, hostToken: room.hostToken, gameType: room.gameType,
     handNumber: room.handNumber, dealerIndex: room.dealerIndex,
-    players: room.players.map(p => ({name:p.name, resumeToken:p.resumeToken, stack:p.stack}))
+    players: room.players.map(p => ({name:p.name, resumeToken:p.resumeToken, stack:p.stack, avatar:p.avatar}))
   };
 }
 function persistRooms() {
@@ -59,7 +59,7 @@ function loadRooms() {
       room.gameType=["holdem","omaha","draw","blackjack","brag"].includes(entry.gameType)?entry.gameType:"holdem";
       room.handNumber=Number.isSafeInteger(entry.handNumber)?Math.max(0,entry.handNumber):0;
       room.dealerIndex=Number.isSafeInteger(entry.dealerIndex)?entry.dealerIndex:0;
-      room.players=validPlayers.map(p=>({...newPlayer(null,p.name),id:null,resumeToken:p.resumeToken,stack:p.stack,connected:false}));
+      room.players=validPlayers.map(p=>({...newPlayer(null,p.name),id:null,resumeToken:p.resumeToken,stack:p.stack,avatar:normaliseAvatar(p.avatar),connected:false}));
       room.message="Table recovered after restart. Rejoin using your original device.";
       rooms.set(room.code,room);
       usedTokens.add(room.hostToken);
@@ -91,15 +91,16 @@ function makeDeck() {
   }
   return deck;
 }
-function newPlayer(id, name) {
-  return { id, resumeToken: crypto.randomBytes(24).toString("hex"), name: String(name || "Player").trim().slice(0, 18) || "Player", stack: 1000,
+function normaliseAvatar(value) { return Number.isInteger(value) && value >= 1 && value <= 16 ? value : 1; }
+function newPlayer(id, name, avatar = 1) {
+  return { id, resumeToken: crypto.randomBytes(24).toString("hex"), name: String(name || "Player").trim().slice(0, 18) || "Player", avatar: (Number.isInteger(avatar) && avatar >= 1 && avatar <= 16 ? avatar : 1), stack: 1000,
     hole: [], committed: 0, roundBet: 0, folded: false, allIn: false, acted: false, connected: true, drew: false };
 }
 function roomPublic(room) {
   return {
     code: room.code, status: room.status, hostId: room.hostId, gameType: room.gameType,
     players: room.players.map((p, i) => ({
-      id: p.id, name: p.name, stack: p.stack, committed: p.committed,
+      id: p.id, name: p.name, avatar: (Number.isInteger(p.avatar) && p.avatar >= 1 && p.avatar <= 16 ? p.avatar : 1), stack: p.stack, committed: p.committed,
       roundBet: p.roundBet, folded: p.folded, allIn: p.allIn, connected: p.connected, bragSeen: !!p.bragSeen,
       seat: i, isDealer: i === room.dealerIndex, isTurn: room.players[room.turnIndex]?.id === p.id
     })),
@@ -530,13 +531,13 @@ io.on("connection", socket => {
     if (typeof callback === "function") callback({ ok: true, roomCode: room.code, playerId: socket.id, resumeToken: room.hostToken });
     emitRoom(room);
   });
-  socket.on("join-room", ({ roomCode, name } = {}, callback) => {
+  socket.on("join-room", ({ roomCode, name, avatar } = {}, callback) => {
     const room = rooms.get(String(roomCode || "").toUpperCase().trim());
     if (!room) return typeof callback === "function" && callback({ ok: false, error: "Room not found." });
     const joinError = canJoinRoom(room, socket.id, MAX_ROOM_PLAYERS);
     if (joinError) return typeof callback === "function" && callback({ok:false,error:joinError});
     if (socketHasSeat(rooms, socket.id)) return typeof callback === "function" && callback({ok:false,error:"This device already occupies a seat at another table."});
-    const player = newPlayer(socket.id, name);
+    const player = newPlayer(socket.id, name, avatar);
     room.players.push(player); socket.join(room.code);
     if (typeof callback === "function") callback({ ok: true, roomCode: room.code, playerId: socket.id, resumeToken: player.resumeToken });
     room.message = `${player.name} joined the table`;

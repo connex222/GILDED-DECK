@@ -56,7 +56,18 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
 .collection .game-pill.locked::after{content:'COMING';color:#bdad91;font-size:9px;letter-spacing:.08em;margin-left:8px}
 #gameSelect{max-width:100%;min-height:44px}
 @media(max-width:480px){.collection{grid-template-columns:1fr}.collection .game-pill{min-height:42px}}
-</style></head>
+</style><style id="avatar-style">
+.marquee-logo{display:block;width:min(100%,620px);max-height:240px;object-fit:contain;margin:0 auto 12px;filter:drop-shadow(0 8px 24px #0009)}
+.avatar-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;max-height:310px;overflow:auto;padding:8px 4px;margin:8px 0 18px}
+.avatar-choice{border:2px solid #806b46;border-radius:12px;overflow:hidden;background:#11271f;color:#f5d89a;padding:3px;cursor:pointer;font-size:10px;line-height:1.3}
+.avatar-choice[aria-pressed="true"]{border-color:#ffe19c;box-shadow:0 0 0 2px #f5c66c88,0 0 15px #f0bc6560}
+.avatar-choice img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px}
+.avatar-choice span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 1px}
+.seat-identity{display:flex;gap:10px;align-items:center}.seat-avatar{width:54px;height:54px;object-fit:cover;border-radius:12px;border:2px solid #d8b574;flex-shrink:0}
+@media(min-width:550px){.avatar-picker{grid-template-columns:repeat(8,minmax(0,1fr));max-height:none}}
+@media(max-width:420px){.seat-avatar{width:42px;height:42px}}
+</style>
+</head>
 <body class="min-h-screen"><div class="ambient-light"></div>
 <header class="border-b border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
  <div class="brand-mark"><div class="brand-icon">♠</div><div><div class="brand-title">THE GILDED DECK</div><div class="text-xs text-amber-100/60 tracking-widest">PRIVATE CARD ROOM · HOLD’EM</div></div></div>
@@ -64,8 +75,8 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
 </header>
 <main class="max-w-6xl mx-auto p-3 sm:p-6">
 <section id="setup" class="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-7 mt-5">
- <div class="casino-emblem" aria-hidden="true"><span>♠</span><span class="emblem-ring">G D</span></div><div class="text-amber-200/70 text-xs tracking-[.35em] mb-3">WELCOME TO THE TABLE</div><h1 class="text-2xl font-black mb-2">The night is yours.</h1><p class="text-zinc-400 mb-5">Create a table on the TV, then join from each player's phone.</p>
- <label class="block text-sm text-zinc-300 mb-1" for="name">Your player name</label><input id="name" maxlength="18" class="w-full rounded-xl p-3 mb-4" placeholder="e.g. Shaun">
+ <img class="marquee-logo" src="/assets/gilded-deck-marquee.webp" alt="The Gilded Deck — Las Vegas casino marquee"/><div class="casino-emblem" aria-hidden="true"><span>♠</span><span class="emblem-ring">G D</span></div><div class="text-amber-200/70 text-xs tracking-[.35em] mb-3">WELCOME TO THE TABLE</div><h1 class="text-2xl font-black mb-2">The night is yours.</h1><p class="text-zinc-400 mb-5">Create a table on the TV, then join from each player's phone.</p>
+ <label class="block text-sm text-amber-200 mb-1" for="avatarPicker">Choose your casino character</label><div id="avatarPicker" class="avatar-picker" role="group" aria-label="Choose your player avatar"></div><label class="block text-sm text-zinc-300 mb-1" for="name">Your player name</label><input id="name" maxlength="18" class="w-full rounded-xl p-3 mb-4" placeholder="e.g. Shaun">
  <div class="grid sm:grid-cols-2 gap-3">
   <button id="hostBtn" class="btn bg-emerald-700 hover:bg-emerald-600">Host / TV display</button>
   <div class="flex gap-2"><input id="roomInput" maxlength="4" class="uppercase min-w-0 w-full rounded-xl p-3" placeholder="ROOM"><button id="joinBtn" class="btn bg-indigo-600 hover:bg-indigo-500">Join</button></div>
@@ -154,6 +165,18 @@ document.addEventListener('visibilitychange',()=>{
 document.getElementById('soundToggle').addEventListener('click',e=>{soundOn=!soundOn;e.currentTarget.textContent=soundOn?'♫ Sound on':'♫ Sound off';e.currentTarget.setAttribute('aria-pressed',String(soundOn));if(soundOn)cue('turn')});
 
 let roomCode = null, playerId = null, isHost = false, publicState = null, privateState = null;
+const avatarNames = ["High Roller","Showgirl","Card Shark","Veteran","Lucky Tourist","Millionaire","Gentleman","Diva","Professor","Wildcard","Cowgirl","Rockstar","Bombshell","Gambler","Chef","Prankster"];
+const avatarUrl = n => `/assets/avatar-${String(Number.isInteger(n)&&n>=1&&n<=16?n:1).padStart(2,"0")}.webp`;
+let selectedAvatar = Number(localStorage.getItem("gildedAvatar")) || 1;
+if (selectedAvatar < 1 || selectedAvatar > 16) selectedAvatar = 1;
+const picker = document.getElementById("avatarPicker");
+for(let i=1;i<=16;i++){
+ const button=document.createElement("button");button.type="button";button.className="avatar-choice";button.setAttribute("aria-label",avatarNames[i-1]);
+ button.innerHTML=`<img src="${avatarUrl(i)}" alt="" loading="lazy"><span>${avatarNames[i-1]}</span>`;
+ button.onclick=()=>{selectedAvatar=i;localStorage.setItem("gildedAvatar",String(i));[...picker.children].forEach((el,j)=>el.setAttribute("aria-pressed",String(j+1===i)));};
+ button.setAttribute("aria-pressed",String(i===selectedAvatar));picker.appendChild(button);
+}
+
 const $ = id => document.getElementById(id);
 $("gameSelect").onchange = e => {
  if(!isHost)return;
@@ -196,7 +219,7 @@ $("joinBtn").onclick = () => {
  setupError("");
  const code = $("roomInput").value.trim().toUpperCase();
  if (code.length !== 4) return setupError("Enter the 4-character room code.");
- socket.emit("join-room", {roomCode: code, name: $("name").value || "Player"}, res => {
+ socket.emit("join-room", {roomCode: code, name: $("name").value || "Player", avatar: selectedAvatar}, res => {
   if (!res?.ok) return setupError(res?.error || "Could not join.");
   roomCode = res.roomCode; playerId = res.playerId; isHost = false; sessionStorage.setItem("gildedSession",JSON.stringify({roomCode,resumeToken:res.resumeToken})); showGame();
  });
@@ -266,7 +289,7 @@ socket.on("update-tv", state => {
   const seat = document.createElement("div");
   seat.className = "seat " + (p.isTurn ? "playing-pulse border-amber-300" : "");
   const status = p.folded ? "FOLDED" : p.allIn ? "ALL-IN" : !p.connected ? "DISCONNECTED" : p.isTurn ? "YOUR TURN" : "ACTIVE";
-  seat.innerHTML = `<div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div>`;
+  seat.innerHTML = `<div class="seat-identity"><img class="seat-avatar" src="${avatarUrl(p.avatar)}" alt="${avatarNames[(p.avatar||1)-1] || "Player"} avatar"/><div class="min-w-0"><div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div></div></div>`;
   return seat;
  }));
  $("gameSelect").value = state.gameType || "holdem";
