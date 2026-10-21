@@ -1,0 +1,14 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {socketHasSeat,roomHasToken,canJoinRoom}=require('../session-guards');
+const room=(status='lobby',players=[])=>({status,players,hostToken:'host-secret'});
+test('new player can join lobby',()=>assert.equal(canJoinRoom(room(), 'new', 8),null));
+test('unknown room rejected',()=>assert.match(canJoinRoom(null,'new',8),/not found/));
+test('playing room rejects new join',()=>assert.match(canJoinRoom(room('playing'),'new',8),/progress/));
+test('existing socket cannot claim second seat',()=>assert.match(canJoinRoom(room('lobby',[{id:'same'}]),'same',8),/already/));
+test('full room rejects join',()=>assert.match(canJoinRoom(room('lobby',Array.from({length:8},(_,i)=>({id:String(i)}))),'new',8),/full/));
+test('occupied socket detected across rooms',()=>assert.equal(socketHasSeat(new Map([['ABCD',room('lobby',[{id:'same',connected:true}])]]),'same'),true));
+test('disconnected socket not considered occupied',()=>assert.equal(socketHasSeat(new Map([['ABCD',room('lobby',[{id:'same',connected:false}])]]),'same'),false));
+test('host token recognized',()=>assert.equal(roomHasToken(room(),'host-secret'),true));
+test('player token recognized',()=>assert.equal(roomHasToken(room('lobby',[{resumeToken:'player-secret'}]),'player-secret'),true));
+test('unknown token rejected',()=>assert.equal(roomHasToken(room(),'other'),false));

@@ -1,0 +1,13 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {drawCapacity,validateDrawIndices}=require('../draw-capacity');
+test('six players can each exchange three cards',()=>assert.deepEqual(drawCapacity(6),{dealt:30,requested:18,remaining:22,safe:true}));
+test('seven players cannot all exchange three cards',()=>assert.equal(drawCapacity(7).safe,false));
+test('eight players cannot all exchange three cards',()=>assert.equal(drawCapacity(8).safe,false));
+test('zero-card stand pat is valid',()=>assert.equal(validateDrawIndices([]),true));
+test('three distinct valid card positions are accepted',()=>assert.equal(validateDrawIndices([0,2,4]),true));
+test('duplicate indices rejected',()=>assert.equal(validateDrawIndices([1,1]),false));
+test('out of range indices rejected',()=>assert.equal(validateDrawIndices([5]),false));
+test('noninteger indices rejected',()=>assert.equal(validateDrawIndices([1.5]),false));
+test('more than three exchanges rejected',()=>assert.equal(validateDrawIndices([0,1,2,3]),false));
+test('invalid player counts rejected',()=>assert.throws(()=>drawCapacity(-1),RangeError));
