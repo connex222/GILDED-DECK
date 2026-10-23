@@ -62,3 +62,16 @@ test('Socket.IO rejects invalid game selection and allows session recovery after
  const rejoin=await client(port,t);const result=await rejoin.ack('resume-session',{roomCode:h.roomCode,resumeToken:seat.resumeToken});
  assert.equal(result.ok,true);assert.equal(result.isHost,false);
 });
+
+// Phase 35: an invalid recovery credential must never seize a player's seat.
+test('Socket.IO rejects forged recovery tokens without evicting the seated player',{skip:!hasRuntime && 'Install runtime dependencies to run live Socket.IO tests'},async t=>{
+ const port=await serverFixture(t);const host=await client(port,t),owner=await client(port,t),attacker=await client(port,t);
+ const room=await host.ack('create-room',{});assert.equal(room.ok,true);
+ const seat=await owner.ack('join-room',{roomCode:room.roomCode,name:'Owner'});assert.equal(seat.ok,true);
+ const forged=await attacker.ack('resume-session',{roomCode:room.roomCode,resumeToken:'invalid-token'});
+ assert.equal(forged.ok,false);
+ const second=await owner.ack('join-room',{roomCode:room.roomCode,name:'Duplicate'});
+ assert.equal(second.ok,false);
+ const other=await attacker.ack('join-room',{roomCode:room.roomCode,name:'Other'});
+ assert.equal(other.ok,true);assert.notEqual(other.playerId,seat.playerId);
+});

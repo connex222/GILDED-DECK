@@ -7,6 +7,8 @@ const fs = require("fs");
 const path = require("path");
 const {drawCapacity, validateDrawIndices} = require("./draw-capacity");
 const {socketHasSeat, canJoinRoom} = require("./session-guards");
+const {createEventGuard} = require("./event-guard");
+const {shouldExpireRoom, DEFAULT_IDLE_MS} = require("./room-lifecycle");
 
 const app = express();
 const server = http.createServer(app);
@@ -27,6 +29,25 @@ app.use(express.static("public"));
 app.get("/health", (_req, res) => res.status(200).json({ ok: true }));
 
 const rooms = new Map();
+const eventGuard = createEventGuard();
+const ROOM_IDLE_MS = Number(process.env.ROOM_IDLE_MS) > 0 ? Number(process.env.ROOM_IDLE_MS) : DEFAULT_IDLE_MS;
+function touchRoom(room) { room.lastActivityAt = Date.now(); }
+function sweepIdleRooms() {
+  let removed = false;
+  for (const room of rooms.values()) {
+    if (!shouldExpireRoom(room, Date.now(), ROOM_IDLE_MS)) continue;
+    cancelHostTransfer(room);
+    cancelNextHand(room);
+    clearTurnClock(room);
+    clearDrawTimers(room);
+    for (const player of room.players) cancelDisconnectTimer(player.resumeToken);
+    rooms.delete(room.code);
+    removed = true;
+  }
+  if (removed) persistRooms();
+}
+const roomSweep = setInterval(sweepIdleRooms, 60_000);
+roomSweep.unref?.();
 const DISCONNECT_GRACE_MS = 60_000;
 const disconnectTimers = new Map();
 const nextHandTimers = new Map();
@@ -231,6 +252,7 @@ function loadRooms() {
       room.dealerToken=typeof entry.dealerToken === "string" ? entry.dealerToken : null;
       room.players=validPlayers.map(p=>({...newPlayer(null,p.name),id:null,resumeToken:p.resumeToken,stack:p.stack,avatar:normaliseAvatar(p.avatar),connected:false}));
       room.message="Table recovered after restart. Rejoin using your original device.";
+      touchRoom(room);
       rooms.set(room.code,room);
       usedTokens.add(room.hostToken);
       for(const p of room.players) usedTokens.add(p.resumeToken);
@@ -282,6 +304,7 @@ function roomPublic(room) {
   };
 }
 function emitRoom(room) {
+  touchRoom(room);
   syncTurnClock(room);
   syncDrawTimers(room);
   persistRooms();
@@ -310,6 +333,7 @@ function createRoom(hostId) {
     dealerCards: [], street: "lobby", message: "Waiting for players to join", handNumber: 0,
     smallBlind: 10, bigBlind: 20, winners: [], lastAction: "", actedThisStreet: new Set()
   };
+  touchRoom(room);
   rooms.set(roomCode, room);
   persistRooms();
   return room;
@@ -747,6 +771,13 @@ function act(room, player, action, amount) {
   advanceTurn(room);
 }
 io.on("connection", socket => {
+  socket.use((packet, next) => {
+    if (eventGuard.check(socket.id)) return next();
+    const ack = packet[packet.length-1];
+    if (typeof ack === "function") ack({ok:false,error:"Too many requests. Please wait a moment."});
+    // Reject the event without disconnecting an otherwise valid session.
+    return next(new Error("Event rate limit exceeded"));
+  });
   socket.on("create-room", ({ name } = {}, callback) => {
     if (socketHasSeat(rooms, socket.id) || [...rooms.values()].some(r => r.hostId === socket.id))
       return typeof callback === "function" && callback({ok:false,error:"This device already hosts or occupies a table."});
@@ -881,6 +912,7 @@ io.on("connection", socket => {
     if (["pre-flop", "flop", "turn", "river", "showdown"].includes(String(round || "pre-flop"))) startHand(room);
   });
   socket.on("disconnect", () => {
+    eventGuard.clear(socket.id);
     for (const room of rooms.values()) {
       if (room.hostId === socket.id) { if (room.hostIsDelegate) { const delegate = room.players.find(p => p.id === socket.id); if (delegate) { delegate.connected = false; if (room.status === "playing" && !delegate.sittingOut) scheduleDisconnect(room, delegate); } } room.hostId = null; room.hostIsDelegate = false; scheduleHostTransfer(room); room.message = "Host disconnected — another player may take over in 30 seconds"; emitRoom(room); continue; }
       const p = room.players.find(x => x.id === socket.id);
