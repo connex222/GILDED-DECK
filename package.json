@@ -1,8 +1,8 @@
 {
-  "name": "texas-holdem-party",
+  "name": "gilded-deck",
   "version": "1.0.0",
   "private": true,
-  "description": "Render-ready Texas Hold'em party poker with TV host and phone controllers",
+  "description": "The Gilded Deck — multiplayer casino card games for TV and phones",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: texas-holdem-party
+    name: gilded-deck
     runtime: node
     plan: free
     buildCommand: npm install

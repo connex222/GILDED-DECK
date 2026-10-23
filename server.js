@@ -17,6 +17,79 @@ app.use(express.static("public"));
 app.get("/health", (_req, res) => res.status(200).json({ ok: true }));
 
 const rooms = new Map();
+const DISCONNECT_GRACE_MS = 60_000;
+const disconnectTimers = new Map();
+function cancelDisconnectTimer(token) {
+  const timer = disconnectTimers.get(token);
+  if (timer) clearTimeout(timer);
+  disconnectTimers.delete(token);
+}
+function expireDisconnectedPlayer(room, token) {
+  disconnectTimers.delete(token);
+  const p = room.players.find(player => player.resumeToken === token);
+  if (!p || p.connected || room.status !== "playing" || p.sittingOut) return;
+  if (room.gameType === "blackjack") {
+    if (p.blackjackStake && !p.blackjackResult) p.blackjackResult = "Standing";
+    blackjackNext(room);
+  } else if (room.gameType === "draw" && room.street === "draw") {
+    p.drew = true; // Stand pat: retain cards, rather than folding automatically.
+    room.message = `${p.name} stood pat after disconnecting`;
+    if (room.players.every(x => x.drew || x.folded || x.allIn || x.sittingOut)) finishDrawRound(room);
+    else emitRoom(room);
+  } else if (!p.folded && !p.allIn) {
+    const wasTurn = room.players[room.turnIndex] === p;
+    p.folded = true;
+    p.acted = true;
+    room.lastAction = `${p.name} folded after 60 seconds disconnected`;
+    if (activePlayers(room).length === 1) finishHand(room, activePlayers(room));
+    else if (wasTurn) {
+      if (room.gameType === "brag") advanceBrag(room);
+      else advanceTurn(room, room.turnIndex);
+    } else emitRoom(room);
+  } else emitRoom(room);
+}
+function scheduleDisconnect(room, player) {
+  cancelDisconnectTimer(player.resumeToken);
+  const token = player.resumeToken;
+  const timer = setTimeout(() => expireDisconnectedPlayer(room, token), DISCONNECT_GRACE_MS);
+  timer.unref?.();
+  disconnectTimers.set(token, timer);
+}
+
+// Server-authoritative turn clock. Re-arming only when the turn/street changes
+// prevents repeated broadcasts or a card peek from resetting the countdown.
+const TURN_MS = 30_000;
+const turnTimers = new Map();
+function clearTurnClock(room) {
+  const entry = turnTimers.get(room.code);
+  if (entry) clearTimeout(entry.timer);
+  turnTimers.delete(room.code);
+  room.turnDeadline = null;
+}
+function syncTurnClock(room) {
+  const player = room.status === "playing" ? room.players[room.turnIndex] : null;
+  if (!player || player.folded || player.allIn || room.street === "draw") {
+    clearTurnClock(room);
+    return;
+  }
+  const key = `${room.handNumber}:${room.street}:${player.resumeToken}`;
+  if (turnTimers.get(room.code)?.key === key) return;
+  clearTurnClock(room);
+  const deadline = Date.now() + TURN_MS;
+  room.turnDeadline = deadline;
+  const timer = setTimeout(() => {
+    if (turnTimers.get(room.code)?.key !== key) return;
+    turnTimers.delete(room.code);
+    room.turnDeadline = null;
+    if (room.status !== "playing" || room.players[room.turnIndex] !== player) return;
+    if (room.gameType === "blackjack") blackjackAct(room, player, "stand");
+    else if (room.gameType === "brag") act(room, player, "fold");
+    else act(room, player, room.currentBet === player.roundBet ? "check" : "fold");
+  }, TURN_MS);
+  timer.unref?.();
+  turnTimers.set(room.code, {key, timer});
+}
+
 // Opt-in persistence. On restart an interrupted hand is cancelled and balances
 // are restored to the last completed hand, avoiding partial-pot corruption.
 const STATE_FILE = process.env.GILDED_STATE_FILE || "";
@@ -24,7 +97,7 @@ let saveTimer = null;
 function snapshotRoom(room) {
   return {
     code: room.code, hostToken: room.hostToken, gameType: room.gameType,
-    handNumber: room.handNumber, dealerIndex: room.dealerIndex,
+    handNumber: room.handNumber, dealerIndex: room.dealerIndex, dealerToken: room.dealerToken || null,
     players: room.players.map(p => ({name:p.name, resumeToken:p.resumeToken, stack:p.stack, avatar:p.avatar}))
   };
 }
@@ -59,6 +132,7 @@ function loadRooms() {
       room.gameType=["holdem","omaha","draw","blackjack","brag"].includes(entry.gameType)?entry.gameType:"holdem";
       room.handNumber=Number.isSafeInteger(entry.handNumber)?Math.max(0,entry.handNumber):0;
       room.dealerIndex=Number.isSafeInteger(entry.dealerIndex)?entry.dealerIndex:0;
+      room.dealerToken=typeof entry.dealerToken === "string" ? entry.dealerToken : null;
       room.players=validPlayers.map(p=>({...newPlayer(null,p.name),id:null,resumeToken:p.resumeToken,stack:p.stack,avatar:normaliseAvatar(p.avatar),connected:false}));
       room.message="Table recovered after restart. Rejoin using your original device.";
       rooms.set(room.code,room);
@@ -94,24 +168,25 @@ function makeDeck() {
 function normaliseAvatar(value) { return Number.isInteger(value) && value >= 1 && value <= 16 ? value : 1; }
 function newPlayer(id, name, avatar = 1) {
   return { id, resumeToken: crypto.randomBytes(24).toString("hex"), name: String(name || "Player").trim().slice(0, 18) || "Player", avatar: (Number.isInteger(avatar) && avatar >= 1 && avatar <= 16 ? avatar : 1), stack: 1000,
-    hole: [], committed: 0, roundBet: 0, folded: false, allIn: false, acted: false, connected: true, drew: false };
+    hole: [], committed: 0, roundBet: 0, folded: false, allIn: false, acted: false, connected: true, drew: false, sittingOut: false };
 }
 function roomPublic(room) {
   return {
     code: room.code, status: room.status, hostId: room.hostId, gameType: room.gameType,
     players: room.players.map((p, i) => ({
       id: p.id, name: p.name, avatar: (Number.isInteger(p.avatar) && p.avatar >= 1 && p.avatar <= 16 ? p.avatar : 1), stack: p.stack, committed: p.committed,
-      roundBet: p.roundBet, folded: p.folded, allIn: p.allIn, connected: p.connected, bragSeen: !!p.bragSeen,
-      seat: i, isDealer: i === room.dealerIndex, isTurn: room.players[room.turnIndex]?.id === p.id
+      roundBet: p.roundBet, folded: p.folded, allIn: p.allIn, connected: p.connected, sittingOut: !!p.sittingOut, bragSeen: !!p.bragSeen,
+      seat: i, isDealer: p.resumeToken === room.dealerToken, isTurn: room.players[room.turnIndex]?.id === p.id
     })),
     dealerCards: room.gameType === "blackjack" ? (room.status === "playing" ? room.dealerCards.map((c,i)=>i===1?null:c) : room.dealerCards) : [], community: room.community, pot: room.pot, currentBet: room.currentBet,
     minRaise: room.minRaise, street: room.street, message: room.message,
     dealerIndex: room.dealerIndex, turnId: room.players[room.turnIndex]?.id || null,
     handNumber: room.handNumber, drawCount: room.players.filter(p=>p.drew).length, smallBlind: room.smallBlind, bigBlind: room.bigBlind,
-    winners: room.winners || [], lastAction: room.lastAction || ""
+    winners: room.winners || [], showdown: room.status === "complete" ? (room.showdown || null) : null, lastAction: room.lastAction || "", turnDeadline: room.turnDeadline || null
   };
 }
 function emitRoom(room) {
+  syncTurnClock(room);
   persistRooms();
   io.to(room.code).emit("update-tv", roomPublic(room));
   for (const p of room.players) {
@@ -125,7 +200,7 @@ function emitRoom(room) {
       callAmount: Math.max(0, Math.min(p.stack, room.currentBet - p.roundBet)),
       minRaiseTo: Math.min(p.stack + p.roundBet, room.currentBet + room.minRaise),
       maxRaiseTo: p.stack + p.roundBet,
-      pot: room.pot, currentBet: room.currentBet, status: room.status, street: room.street, gameType: room.gameType, canDraw: room.gameType === "draw" && room.street === "draw" && !p.folded && !p.drew && !p.allIn
+      pot: room.pot, currentBet: room.currentBet, turnDeadline: room.turnDeadline || null, status: room.status, street: room.street, gameType: room.gameType, canDraw: room.gameType === "draw" && room.street === "draw" && !p.folded && !p.drew && !p.allIn
     });
   }
 }
@@ -134,7 +209,7 @@ function createRoom(hostId) {
   do { roomCode = code(); } while (rooms.has(roomCode));
   const room = {
     code: roomCode, hostId, hostToken: crypto.randomBytes(24).toString("hex"), players: [], status: "lobby", gameType: "holdem", deck: [], community: [],
-    pot: 0, currentBet: 0, minRaise: 20, turnIndex: -1, dealerIndex: 0,
+    pot: 0, currentBet: 0, minRaise: 20, turnIndex: -1, dealerIndex: 0, dealerToken: null,
     dealerCards: [], street: "lobby", message: "Waiting for players to join", handNumber: 0,
     smallBlind: 10, bigBlind: 20, winners: [], lastAction: "", actedThisStreet: new Set()
   };
@@ -145,12 +220,12 @@ function createRoom(hostId) {
 function nextEligible(room, from, predicate = p => !p.folded && !p.allIn && p.stack >= 0) {
   for (let step = 1; step <= room.players.length; step++) {
     const idx = (from + step + room.players.length) % room.players.length;
-    if (predicate(room.players[idx])) return idx;
+    if (!room.players[idx].sittingOut && predicate(room.players[idx])) return idx;
   }
   return -1;
 }
-function activePlayers(room) { return room.players.filter(p => !p.folded); }
-function actionablePlayers(room) { return room.players.filter(p => !p.folded && !p.allIn && p.stack > 0); }
+function activePlayers(room) { return room.players.filter(p => !p.folded && !p.sittingOut); }
+function actionablePlayers(room) { return activePlayers(room).filter(p => !p.allIn && p.stack > 0); }
 function roundComplete(room) {
   const able = actionablePlayers(room);
   if (able.length === 0) return true;
@@ -188,10 +263,19 @@ function bragHand(cards) {
   const score=bragScore(cards);
   return {score,compare(other){return compareScores(score,other.score)}};
 }
+// pokersolver.compare returns -1 for a stronger hand; Brag uses +1.
+// Normalise both to the convention expected by settlePots.
+function pokerHand(hand) {
+  return {
+    raw: hand,
+    descr: hand.descr,
+    compare(other) { const result = hand.compare(other.raw); return result === 0 ? 0 : -result; }
+  };
+}
 function solvePlayerHand(room,p) {
   if(room.gameType === "brag") return bragHand(p.hole);
-  if(room.gameType === "draw") return Hand.solve(p.hole.map(cardCode));
-  if(room.gameType !== "omaha") return Hand.solve([...p.hole,...room.community].map(cardCode));
+  if(room.gameType === "draw") return pokerHand(Hand.solve(p.hole.map(cardCode)));
+  if(room.gameType !== "omaha") return pokerHand(Hand.solve([...p.hole,...room.community].map(cardCode)));
   // Omaha requires exactly two hole cards and exactly three board cards.
   const candidates=[];
   for(let a=0;a<p.hole.length;a++)for(let b=a+1;b<p.hole.length;b++)
@@ -199,7 +283,7 @@ function solvePlayerHand(room,p) {
       for(let e=d+1;e<room.community.length;e++)
         candidates.push(Hand.solve([p.hole[a],p.hole[b],room.community[c],room.community[d],room.community[e]].map(cardCode)));
   if(!candidates.length)throw Error("Incomplete Omaha board");
-  return Hand.winners(candidates)[0];
+  return pokerHand(Hand.winners(candidates)[0]);
 }
 function resetStreet(room) {
   room.currentBet = 0;
@@ -300,6 +384,14 @@ function finishHand(room, winners) {
   } else {
     room.winners = settlePots(room, hands);
   }
+  const contested = activePlayers(room).length > 1;
+  room.showdown = contested ? {
+    revealed: room.players.filter(p => !p.folded && p.hole.length).map(p => ({
+      id: p.id, name: p.name, cards: p.hole, handName: hands.get(p.id)?.descr || "Hand",
+      amount: room.winners.find(w => w.id === p.id)?.amount || 0
+    })),
+    winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount }))
+  } : { revealed: [], winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount })) };
   room.pot = 0;
   room.status = "complete";
   room.street = "showdown";
@@ -360,10 +452,11 @@ function blackjackNext(room){
 function blackjackStart(room){
   const seated=room.players.filter(p=>p.connected&&p.stack>=20);
   if(!seated.length){room.message="A player needs at least 20 chips";return emitRoom(room);}
-  room.players=room.players.filter(p=>p.connected);room.status="playing";room.handNumber++;
-  room.deck=makeDeck();room.community=[];room.dealerCards=[room.deck.pop(),room.deck.pop()];room.street="blackjack";room.pot=0;room.currentBet=0;room.winners=[];
+  room.status="playing";room.handNumber++;
+  room.deck=makeDeck();room.community=[];room.dealerCards=[room.deck.pop(),room.deck.pop()];room.street="blackjack";room.pot=0;room.currentBet=0;room.winners=[];room.showdown=null;
   for(const p of room.players){p.hole=[];p.blackjackResult="";p.blackjackStake=0;p.folded=false;p.roundBet=0;p.committed=0;
-    if(p.stack>=20){p.stack-=20;p.blackjackStake=20;p.hole=[room.deck.pop(),room.deck.pop()];
+    p.sittingOut = !p.connected || p.stack < 20;
+    if(!p.sittingOut){p.stack-=20;p.blackjackStake=20;p.hole=[room.deck.pop(),room.deck.pop()];
       if(blackjackTotal(p.hole)===21)p.blackjackResult="Natural blackjack";
     }
   }
@@ -392,11 +485,17 @@ function startHand(room) {
     room.message = "Five-Card Draw supports a maximum of six players with three-card exchanges.";
     return emitRoom(room);
   }
-  room.players = eligible;
+  // Keep every seat and its recovery token. Non-participants are marked out for this hand.
+  const eligibleTokens = new Set(eligible.map(p => p.resumeToken));
+  room.players.forEach(p => {
+    p.sittingOut = !eligibleTokens.has(p.resumeToken);
+    p.hole = []; p.folded = p.sittingOut; p.allIn = false;
+    p.drew = p.sittingOut; p.acted = p.sittingOut; p.committed = 0; p.roundBet = 0;
+  });
   room.status = "playing"; room.handNumber++; room.deck = makeDeck(); room.community = [];
   room.pot = 0; room.currentBet = room.bigBlind; room.minRaise = room.bigBlind;
-  room.winners = []; room.lastAction = ""; room.bragActions = 0; room.street = room.gameType === "draw" ? "pre-draw" : room.gameType === "brag" ? "brag-betting" : "pre-flop"; room.actedThisStreet = new Set();
-  room.players.forEach(p => {
+  room.winners = []; room.showdown = null; room.lastAction = ""; room.bragActions = 0; room.street = room.gameType === "draw" ? "pre-draw" : room.gameType === "brag" ? "brag-betting" : "pre-flop"; room.actedThisStreet = new Set();
+  eligible.forEach(p => {
     p.hole = Array.from({length: room.gameType === "draw" ? 5 : room.gameType === "brag" ? 3 : room.gameType === "omaha" ? 4 : 2},()=>room.deck.pop()); p.drew=false; p.committed = 0; p.roundBet = 0;
     p.folded = false; p.allIn = false; p.acted = false; p.bragSeen = false;
   });
@@ -404,19 +503,24 @@ function startHand(room) {
     // Brag uses equal antes, then successive blind/seen stakes. No poker blinds.
     room.bragStake = room.bigBlind;
     room.currentBet = 0;
-    for (const p of room.players) {
+    for (const p of eligible) {
       p.roundBet = 0;
       postBet(room, p, room.smallBlind);
       // Players unable to afford a full ante must sit out a future hand.
     }
   }
-  room.dealerIndex = (room.dealerIndex + (room.handNumber === 1 ? 0 : 1)) % room.players.length;
-  const sb = room.players.length === 2 ? room.dealerIndex : (room.dealerIndex + 1) % room.players.length;
-  const bb = (sb + 1) % room.players.length;
+  // Rotate by persistent seat identity, skipping players who are sitting out.
+  const oldDealerIndex = room.players.findIndex(p => p.resumeToken === room.dealerToken);
+  const startingIndex = oldDealerIndex >= 0 ? oldDealerIndex : -1;
+  const dealerIndex = nextEligible(room, startingIndex, p => !p.sittingOut);
+  room.dealerIndex = dealerIndex;
+  room.dealerToken = room.players[dealerIndex].resumeToken;
+  const sb = eligible.length === 2 ? dealerIndex : nextEligible(room, dealerIndex);
+  const bb = nextEligible(room, sb);
   if (room.gameType !== "brag") {
     postBet(room, room.players[sb], room.smallBlind);
     postBet(room, room.players[bb], room.bigBlind);
-    room.currentBet = Math.max(...room.players.map(p => p.roundBet));
+    room.currentBet = Math.max(...eligible.map(p => p.roundBet));
   }
   room.turnIndex = room.gameType === "brag" ? nextEligible(room, room.dealerIndex) : nextEligible(room, bb);
   room.message = `Hand ${room.handNumber} — ${room.street}`;
@@ -500,7 +604,7 @@ function act(room, player, action, amount) {
   } else if (action === "raise" || action === "all-in") {
     const target = action === "all-in" ? player.roundBet + player.stack : Number(amount);
     const maxTarget = player.roundBet + player.stack;
-    if (!Number.isFinite(target) || target <= room.currentBet || target > maxTarget) {
+    if (!Number.isSafeInteger(target) || target <= room.currentBet || target > maxTarget) {
       return io.to(player.id).emit("action-error", "Raise must be above the current bet and no more than your stack.");
     }
     const raiseBy = target - room.currentBet;
@@ -561,6 +665,7 @@ io.on("connection", socket => {
     if(player.connected && io.sockets.sockets.has(player.id) && player.id!==socket.id)
       return typeof callback === "function" && callback({ok:false,error:"Seat already connected"});
     if(socketHasSeat(rooms, socket.id) && player.id !== socket.id) return typeof callback === "function" && callback({ok:false,error:"This device already occupies another seat."});
+    cancelDisconnectTimer(player.resumeToken);
     player.id=socket.id;player.connected=true;socket.join(room.code);
     if(typeof callback === "function")callback({ok:true,roomCode:room.code,playerId:socket.id,isHost:false});
     emitRoom(room);
@@ -569,7 +674,7 @@ io.on("connection", socket => {
     const room = rooms.get(String(roomCode || "").toUpperCase());
     if(!room || room.hostId !== socket.id || room.status === "playing") return typeof callback === "function" && callback({ok:false,error:"Only the host may change games between hands."});
     if(!["holdem","omaha","draw","blackjack","brag"].includes(gameType)) return typeof callback === "function" && callback({ok:false,error:"Game unavailable."});
-    room.gameType=gameType;room.status="lobby";room.street="lobby";room.community=[];room.winners=[];
+    room.gameType=gameType;room.status="lobby";room.street="lobby";room.community=[];room.winners=[];room.showdown=null;
     room.dealerCards=[];room.message=gameType==="blackjack"?"Blackjack selected — fixed 20-chip stakes, dealer stands on 17":gameType==="omaha"?"Omaha selected — exactly two hole cards must play":gameType==="brag"?"Three-Card Brag — prial, running flush, run, flush, pair, high card":gameType==="draw"?"Five-Card Draw selected — exchange up to three cards":"Texas Hold’em selected";
     emitRoom(room);
     if(typeof callback === "function") callback({ok:true});
@@ -611,26 +716,13 @@ io.on("connection", socket => {
       const p = room.players.find(x => x.id === socket.id);
       if (!p) continue;
       p.connected = false;
-      // Preserve seats so players can rejoin using their private resume token.
-      if (room.status === "playing" && room.gameType === "blackjack") {
-        // An absent player stands automatically so the dealer can finish the hand.
-        if (p.blackjackStake && !p.blackjackResult) p.blackjackResult = "Standing";
-        blackjackNext(room);
-      } else if (room.status === "playing" && room.gameType === "draw" && room.street === "draw") {
-        p.folded = true; p.acted = true; p.drew = true;
-        if(room.players.every(x=>x.drew || x.folded || x.allIn || !x.connected))finishDrawRound(room);
-        else emitRoom(room);
-      } else if (room.status === "playing" && !p.folded && !p.allIn) {
-        p.folded = true; p.acted = true;
-        // Brag has its own betting/turn progression. Do not enter poker streets
-        // when a Brag player disconnects, particularly when one player remains.
-        if (room.gameType === "brag") {
-          if (activePlayers(room).length === 1) finishHand(room, activePlayers(room));
-          else if (room.players[room.turnIndex]?.id === socket.id) advanceBrag(room);
-          else emitRoom(room); // An off-turn departure must not skip the current player.
-        } else if (room.turnIndex >= 0) advanceTurn(room, room.turnIndex);
-        else emitRoom(room);
-      } else emitRoom(room);
+      // Allow mobile phones to reconnect without forfeiting their cards.
+      // Keep the seat, cards and token intact throughout the grace period.
+      if (room.status === "playing" && !p.sittingOut) {
+        scheduleDisconnect(room, p);
+        room.message = `${p.name} disconnected — 60 seconds to reconnect`;
+      }
+      emitRoom(room);
       break;
     }
   });

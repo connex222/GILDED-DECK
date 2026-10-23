@@ -81,7 +81,7 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
   <button id="hostBtn" class="btn bg-emerald-700 hover:bg-emerald-600">Host / TV display</button>
   <div class="flex gap-2"><input id="roomInput" maxlength="4" class="uppercase min-w-0 w-full rounded-xl p-3" placeholder="ROOM"><button id="joinBtn" class="btn bg-indigo-600 hover:bg-indigo-500">Join</button></div>
  </div>
- <p id="setupError" class="text-rose-400 text-sm mt-3"></p><div class="collection"><span class="game-pill">♠ Texas Hold’em · Live</span><span class="game-pill" title="Available game">♦ Omaha · Live</span><span class="game-pill" title="Available game">♣ Five-Card Draw · Live</span><span class="game-pill" title="Available game">♥ Blackjack · Live</span><span class="game-pill locked" title="Planned game">♠ Seven-Card Stud · Planned</span><span class="game-pill" title="Available game">♦ Three-Card Brag · Live</span></div>
+ <p id="setupError" class="text-rose-400 text-sm mt-3"></p><div class="collection"><span class="game-pill">♠ Texas Hold’em · Live</span><span class="game-pill" title="Available game">♦ Omaha · Live</span><span class="game-pill" title="Available game">♣ Five-Card Draw · Live</span><span class="game-pill" title="Available game">♥ Blackjack · Live</span><span class="game-pill" title="Available game">♦ Three-Card Brag · Live</span></div>
 </section>
 <section id="game" class="hidden">
  <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
@@ -270,6 +270,18 @@ document.querySelectorAll("[data-bj]").forEach(b=>b.addEventListener("click",()=
 }));
 socket.on("connect", () => $("connection").textContent = "Connected");
 socket.on("disconnect", () => $("connection").textContent = "Reconnecting…");
+setInterval(() => {
+ document.querySelectorAll(".turn-clock").forEach(el => {
+  const seconds = Math.max(0, Math.ceil((Number(el.dataset.deadline) - Date.now()) / 1000));
+  el.textContent = `⏱ ${seconds}s`;
+  el.setAttribute("aria-label", `${seconds} seconds remaining`);
+ });
+ const badge = document.getElementById("turnBadge");
+ if (badge && privateState?.isTurn && privateState?.turnDeadline) {
+  const seconds = Math.max(0, Math.ceil((privateState.turnDeadline - Date.now()) / 1000));
+  badge.textContent = `YOUR TURN · ${seconds}s`;
+ }
+}, 250);
 socket.on("update-tv", state => {
  if (roomCode && state.code !== roomCode) return;
  publicState = state;
@@ -290,6 +302,20 @@ socket.on("update-tv", state => {
   seat.className = "seat " + (p.isTurn ? "playing-pulse border-amber-300" : "");
   const status = p.folded ? "FOLDED" : p.allIn ? "ALL-IN" : !p.connected ? "DISCONNECTED" : p.isTurn ? "YOUR TURN" : "ACTIVE";
   seat.innerHTML = `<div class="seat-identity"><img class="seat-avatar" src="${avatarUrl(p.avatar)}" alt="${avatarNames[(p.avatar||1)-1] || "Player"} avatar"/><div class="min-w-0"><div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div></div></div>`;
+  if (p.isTurn && state.turnDeadline) { const clock = document.createElement("div"); clock.className = "turn-clock text-amber-200 font-black text-lg"; clock.dataset.deadline = String(state.turnDeadline); seat.append(clock); }
+  const reveal = state.showdown?.revealed?.find(r => r.id === p.id);
+  if (reveal) {
+    const revealPanel = document.createElement("div");
+    revealPanel.className = "mt-2 rounded-lg border border-amber-400/70 bg-black/60 p-2";
+    const title = document.createElement("div");
+    title.className = "text-amber-200 font-bold text-sm";
+    title.textContent = `${reveal.handName}${reveal.amount ? ` · +${reveal.amount} chips` : ""}`;
+    const cards = document.createElement("div");
+    cards.className = "flex flex-wrap gap-1 mt-1";
+    cards.replaceChildren(...reveal.cards.map(c => cardEl(c)));
+    revealPanel.append(title, cards);
+    seat.append(revealPanel);
+  }
   return seat;
  }));
  $("gameSelect").value = state.gameType || "holdem";
