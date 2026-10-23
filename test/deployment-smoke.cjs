@@ -23,6 +23,7 @@ try {
     assert.equal(home.status, 200, 'Homepage must return HTTP 200');
     const html = await home.text();
     assert.match(html, /Gilded Deck/i, 'Homepage must contain the game name');
-    console.log(`Deployment smoke passed: ${origin} (health and homepage)`);
+    await require('./socket-smoke.cjs').checkSocket(origin);
+    console.log(`Deployment smoke passed: ${origin} (health, homepage and Socket.IO handshake)`);
   } finally { clearTimeout(timer); }
 })().catch(error => { console.error('Deployment smoke FAILED:', error.message); process.exitCode=1; });

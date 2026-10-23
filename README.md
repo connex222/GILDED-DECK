@@ -709,3 +709,18 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - Example: `GILDED_SMOKE_URL=https://gilded-deck.onrender.com npm run test:smoke`.
 - This check confirms basic HTTP availability only; it does **not** certify game rules, live Socket.IO connections, mobile usability, or the six skipped integration tests.
 - Keep `npm run test:release` as the separate, strict zero-skips release gate. The real-device multiplayer trial remains required before final sign-off.
+
+
+## Phase 46 — CI and multiplayer test reliability
+
+- Integration test server fixture now explicitly supplies `ALLOWED_ORIGINS=http://localhost:3000`, ensuring the forbidden-origin test does not depend on the runner’s inherited environment.
+- Added a post-test GitHub Actions smoke job on pushes to `main`, conditional on the strict zero-skips test job passing. The smoke job retries HTTPS `/health` and homepage checks to allow for Render cold starts and asynchronous deployments. **Note:** the smoke job checks the live site, but it does not yet prove that the tested commit is the deployed commit.
+- Added two offline CI regression tests.
+- Release remains blocked until the six Socket.IO tests run successfully in GitHub Actions and the real-device trial passes.
+
+## Phase 47 — Live Socket.IO transport smoke check
+
+- The read-only `npm run test:smoke` now verifies a full Engine.IO opening frame and Socket.IO namespace acknowledgement over secure WebSocket, in addition to `/health` and the homepage.
+- It sends only the standard Socket.IO namespace handshake and protocol pong; it does not create rooms, place bets or modify game state.
+- Added deterministic mock-WebSocket tests for successful handshake, malformed opening frames and premature disconnection.
+- **This is a transport smoke test, not multiplayer certification.** Six full Socket.IO integration tests remain to be executed in a dependency-enabled CI environment, with zero skips required for release approval.

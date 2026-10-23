@@ -9,7 +9,7 @@ const hasRuntime = typeof WebSocket === 'function' && ['express','socket.io','po
 
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 async function serverFixture(t){
- const port=await freePort(); const proc=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,PORT:String(port),GILDED_STATE_FILE:''},stdio:['ignore','pipe','pipe']});
+ const port=await freePort(); const proc=spawn(process.execPath,['server.js'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,PORT:String(port),GILDED_STATE_FILE:'',ALLOWED_ORIGINS:'http://localhost:3000'},stdio:['ignore','pipe','pipe']});
  let output='';proc.stdout.on('data',d=>output+=d);proc.stderr.on('data',d=>output+=d);
  t.after(()=>{proc.kill();});
  for(let i=0;i<100;i++){if(proc.exitCode!==null)throw Error('Server quit: '+output);try{const r=await fetch(`http://127.0.0.1:${port}/health`);if(r.ok)return port;}catch{}await new Promise(r=>setTimeout(r,30));}
