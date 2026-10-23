@@ -42,3 +42,7 @@ Run `npm test` and `node --check server.js`. Live Socket.IO tests require instal
 - `README.md` — current setup, features and limitations.
 - `DEVELOPMENT-HISTORY.md` — consolidated historical phase notes.
 - `PHASE-27-CONSOLIDATION.md` — changes in this release.
+
+## Phase 28 — Cash-game rebuys
+
+When your play-chip stack reaches zero, the phone displays **Rebuy 1,000 play chips** between hands. Each rebuy increases your total bought-in chips and the visible rebuy tally. Rebuys are not available during a hand. These are play chips only; no payments are involved. Tournament rebuy restrictions are not yet implemented.

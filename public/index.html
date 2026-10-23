@@ -109,6 +109,7 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
    <div class="bg-zinc-800 rounded-xl p-3"><div class="text-xs text-zinc-400">Committed</div><div id="myCommitted" class="font-black text-xl">0</div></div>
    <div class="bg-zinc-800 rounded-xl p-3"><div class="text-xs text-zinc-400">To call</div><div id="toCall" class="font-black text-xl">0</div></div>
   </div>
+  <div id="rebuyPanel" class="hidden rounded-xl border border-amber-500 bg-emerald-950 p-4 mb-4"><p class="font-bold text-amber-200 mb-2">Out of chips? Rejoin the action.</p><button id="rebuyBtn" class="btn bg-amber-500 text-zinc-950 font-bold w-full p-3">Rebuy 1,000 play chips</button><p id="rebuyInfo" class="text-sm text-amber-100 mt-2"></p></div>
   <div id="blackjackActions" class="hidden grid grid-cols-3 gap-2 mb-3"><button data-bj="hit" class="btn bg-emerald-700">Hit</button><button data-bj="stand" class="btn bg-amber-600 text-zinc-950">Stand</button><button data-bj="double" class="btn bg-indigo-700">Double</button></div><div id="blackjackResult" class="text-amber-200 font-bold mb-2"></div><div id="bragControls" class="hidden grid grid-cols-2 gap-2 mb-3"><button id="bragLook" class="btn bg-amber-700">Look at cards</button><button id="bragSee" class="btn bg-indigo-700">See opponent</button><button id="bragPlay" class="btn bg-emerald-700">Play stake</button><button id="bragFold" class="btn bg-rose-700">Fold</button><button id="bragRaise" class="btn bg-violet-700">Raise stake</button><p id="bragRules" class="text-xs text-amber-200 col-span-2">Blind pays 1× · Seen pays 2×. A see costs 2×.</p></div><div id="actions" class="hidden">
    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
     <button data-action="fold" class="btn bg-rose-700">Fold</button><button id="checkCall" class="btn bg-emerald-700">Check</button><button id="raiseAction" class="btn bg-indigo-600">Raise</button><button data-action="all-in" class="btn bg-amber-600 text-zinc-950">All-In</button>
@@ -239,6 +240,7 @@ $("copyLink").onclick = async () => {
  try { await navigator.clipboard.writeText(url); $("copyLink").textContent = "Copied!"; }
  catch { prompt("Copy this join link:", url); }
 };
+$("rebuyBtn").onclick = () => socket.emit("rebuy",{roomCode}, result => { if(!result?.ok) $("toast").textContent = result?.error || "Rebuy unavailable"; });
 $("startBtn").onclick = () => socket.emit("start-game", {roomCode});
 $("community").replaceChildren(...Array.from({length:5},()=>cardEl(null,true)));
 const selectedDraw = new Set();
@@ -301,7 +303,7 @@ socket.on("update-tv", state => {
   const seat = document.createElement("div");
   seat.className = "seat " + (p.isTurn ? "playing-pulse border-amber-300" : "");
   const status = p.folded ? "FOLDED" : p.allIn ? "ALL-IN" : !p.connected ? "DISCONNECTED" : p.isTurn ? "YOUR TURN" : "ACTIVE";
-  seat.innerHTML = `<div class="seat-identity"><img class="seat-avatar" src="${avatarUrl(p.avatar)}" alt="${avatarNames[(p.avatar||1)-1] || "Player"} avatar"/><div class="min-w-0"><div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div></div></div>`;
+  seat.innerHTML = `<div class="seat-identity"><img class="seat-avatar" src="${avatarUrl(p.avatar)}" alt="${avatarNames[(p.avatar||1)-1] || "Player"} avatar"/><div class="min-w-0"><div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips · ${p.rebuys || 0} rebuys</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div></div></div>`;
   if (p.isTurn && state.turnDeadline) { const clock = document.createElement("div"); clock.className = "turn-clock text-amber-200 font-black text-lg"; clock.dataset.deadline = String(state.turnDeadline); seat.append(clock); }
   const reveal = state.showdown?.revealed?.find(r => r.id === p.id);
   if (reveal) {
@@ -329,6 +331,8 @@ socket.on("update-player", state => {
  if (state.playerId !== playerId) return;
  privateState = state;
  $("myStack").textContent = state.stack;
+ $("rebuyPanel").classList.toggle("hidden", !state.canRebuy);
+ $("rebuyInfo").textContent = `Rebuys: ${state.rebuys || 0} · Total bought in: ${state.totalBuyIn || 1000} · Net: ${state.netResult ?? 0}`;
  $("myCommitted").textContent = state.committed;
  $("toCall").textContent = state.callAmount;
  selectedDraw.clear();

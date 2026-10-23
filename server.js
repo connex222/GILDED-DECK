@@ -202,14 +202,14 @@ function makeDeck() {
 function normaliseAvatar(value) { return Number.isInteger(value) && value >= 1 && value <= 16 ? value : 1; }
 function newPlayer(id, name, avatar = 1) {
   return { id, resumeToken: crypto.randomBytes(24).toString("hex"), name: String(name || "Player").trim().slice(0, 18) || "Player", avatar: (Number.isInteger(avatar) && avatar >= 1 && avatar <= 16 ? avatar : 1), stack: 1000,
-    hole: [], committed: 0, roundBet: 0, folded: false, allIn: false, acted: false, connected: true, drew: false, sittingOut: false };
+    hole: [], committed: 0, roundBet: 0, folded: false, allIn: false, acted: false, connected: true, drew: false, sittingOut: false, rebuys: 0, totalBuyIn: 1000 };
 }
 function roomPublic(room) {
   return {
     code: room.code, status: room.status, hostId: room.hostId, gameType: room.gameType,
     players: room.players.map((p, i) => ({
       id: p.id, name: p.name, avatar: (Number.isInteger(p.avatar) && p.avatar >= 1 && p.avatar <= 16 ? p.avatar : 1), stack: p.stack, committed: p.committed,
-      roundBet: p.roundBet, folded: p.folded, allIn: p.allIn, connected: p.connected, sittingOut: !!p.sittingOut, bragSeen: !!p.bragSeen,
+      roundBet: p.roundBet, folded: p.folded, allIn: p.allIn, connected: p.connected, sittingOut: !!p.sittingOut, rebuys: p.rebuys || 0, netResult: p.stack - (p.totalBuyIn || 1000), bragSeen: !!p.bragSeen,
       seat: i, isDealer: p.resumeToken === room.dealerToken, isTurn: room.players[room.turnIndex]?.id === p.id
     })),
     dealerCards: room.gameType === "blackjack" ? (room.status === "playing" ? room.dealerCards.map((c,i)=>i===1?null:c) : room.dealerCards) : [], community: room.community, pot: room.pot, currentBet: room.currentBet,
@@ -228,7 +228,7 @@ function emitRoom(room) {
     if (!p.connected) continue;
     io.to(p.id).emit("update-player", {
       roomCode: room.code, playerId: p.id, hole: room.gameType === "brag" && !p.bragSeen && room.status === "playing" ? p.hole.map(()=>null) : p.hole, blackjackResult: p.blackjackResult || "", blackjackStake: p.blackjackStake || 0,
-      stack: p.stack, committed: p.committed, roundBet: p.roundBet, bragSeen: !!p.bragSeen, bragStake: room.bragStake || 20, bragCost: room.gameType === "brag" ? (p.bragSeen ? 2 : 1) * (room.bragStake || 20) : 0, bragStake: room.gameType === "brag" ? room.bragStake : undefined,
+      stack: p.stack, rebuys: p.rebuys || 0, totalBuyIn: p.totalBuyIn || 1000, netResult: p.stack - (p.totalBuyIn || 1000), canRebuy: room.status !== "playing" && p.stack === 0, committed: p.committed, roundBet: p.roundBet, bragSeen: !!p.bragSeen, bragStake: room.bragStake || 20, bragCost: room.gameType === "brag" ? (p.bragSeen ? 2 : 1) * (room.bragStake || 20) : 0, bragStake: room.gameType === "brag" ? room.bragStake : undefined,
       isTurn: room.players[room.turnIndex]?.id === p.id,
       blackjack: room.gameType === "blackjack",
       canCheck: room.currentBet === p.roundBet,
@@ -703,6 +703,21 @@ io.on("connection", socket => {
     cancelDisconnectTimer(player.resumeToken);
     player.id=socket.id;player.connected=true;socket.join(room.code);
     if(typeof callback === "function")callback({ok:true,roomCode:room.code,playerId:socket.id,isHost:false});
+    emitRoom(room);
+  });
+  socket.on("rebuy", ({roomCode} = {}, callback) => {
+    const room = rooms.get(String(roomCode || "").trim().toUpperCase());
+    const player = room?.players.find(p => p.id === socket.id && p.connected);
+    const fail = error => { if(typeof callback === "function") callback({ok:false,error}); else socket.emit("action-error",error); };
+    if (!room || !player) return fail("You must occupy a connected seat to rebuy.");
+    if (room.status === "playing") return fail("Wait until the hand finishes before rebuying.");
+    if (player.stack !== 0) return fail("Rebuys are available only when your stack reaches zero.");
+    player.stack = 1000;
+    player.totalBuyIn = (player.totalBuyIn || 1000) + 1000;
+    player.rebuys = (player.rebuys || 0) + 1;
+    player.sittingOut = false;
+    room.message = `${player.name} rebought 1,000 play chips`;
+    if (typeof callback === "function") callback({ok:true,stack:player.stack,rebuys:player.rebuys});
     emitRoom(room);
   });
   socket.on("select-game", ({ roomCode, gameType } = {}, callback) => {
