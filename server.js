@@ -59,6 +59,8 @@ function scheduleDisconnect(room, player) {
 // Server-authoritative turn clock. Re-arming only when the turn/street changes
 // prevents repeated broadcasts or a card peek from resetting the countdown.
 const TURN_MS = 30_000;
+// An active disconnected player retains the full reconnection grace period.
+function turnKey(room, player) { return `${room.handNumber}:${room.street}:${player.resumeToken}`; }
 const turnTimers = new Map();
 function clearTurnClock(room) {
   const entry = turnTimers.get(room.code);
@@ -68,11 +70,11 @@ function clearTurnClock(room) {
 }
 function syncTurnClock(room) {
   const player = room.status === "playing" ? room.players[room.turnIndex] : null;
-  if (!player || player.folded || player.allIn || room.street === "draw") {
+  if (!player || player.folded || player.allIn || room.street === "draw" || !player.connected) {
     clearTurnClock(room);
     return;
   }
-  const key = `${room.handNumber}:${room.street}:${player.resumeToken}`;
+  const key = turnKey(room, player);
   if (turnTimers.get(room.code)?.key === key) return;
   clearTurnClock(room);
   const deadline = Date.now() + TURN_MS;
@@ -81,13 +83,45 @@ function syncTurnClock(room) {
     if (turnTimers.get(room.code)?.key !== key) return;
     turnTimers.delete(room.code);
     room.turnDeadline = null;
-    if (room.status !== "playing" || room.players[room.turnIndex] !== player) return;
+    if (room.status !== "playing" || room.players[room.turnIndex] !== player || !player.connected) return;
     if (room.gameType === "blackjack") blackjackAct(room, player, "stand");
     else if (room.gameType === "brag") act(room, player, "fold");
     else act(room, player, room.currentBet === player.roundBet ? "check" : "fold");
   }, TURN_MS);
   timer.unref?.();
   turnTimers.set(room.code, {key, timer});
+}
+
+// Draw exchange timer: a player who does not exchange stands pat after 30 seconds.
+const drawTimers = new Map();
+function clearDrawTimers(room) {
+  for (const [key, timer] of drawTimers) {
+    if (key.startsWith(`${room.code}:`)) { clearTimeout(timer); drawTimers.delete(key); }
+  }
+}
+function syncDrawTimers(room) {
+  if (room.status !== "playing" || room.gameType !== "draw" || room.street !== "draw") {
+    clearDrawTimers(room);
+    return;
+  }
+  for (const p of room.players) {
+    const key = `${room.code}:${p.resumeToken}`;
+    if (p.folded || p.allIn || p.drew || p.sittingOut || !p.connected) {
+      if (drawTimers.has(key)) { clearTimeout(drawTimers.get(key)); drawTimers.delete(key); }
+      continue;
+    }
+    if (drawTimers.has(key)) continue;
+    const timer = setTimeout(() => {
+      drawTimers.delete(key);
+      if (room.status !== "playing" || room.street !== "draw" || p.drew || p.folded || !p.connected) return;
+      p.drew = true;
+      room.message = `${p.name} stood pat when the exchange timer expired`;
+      if (room.players.every(x => x.drew || x.folded || x.allIn || x.sittingOut || !x.connected)) finishDrawRound(room);
+      else emitRoom(room);
+    }, TURN_MS);
+    timer.unref?.();
+    drawTimers.set(key, timer);
+  }
 }
 
 // Opt-in persistence. On restart an interrupted hand is cancelled and balances
@@ -187,6 +221,7 @@ function roomPublic(room) {
 }
 function emitRoom(room) {
   syncTurnClock(room);
+  syncDrawTimers(room);
   persistRooms();
   io.to(room.code).emit("update-tv", roomPublic(room));
   for (const p of room.players) {
@@ -716,6 +751,10 @@ io.on("connection", socket => {
       const p = room.players.find(x => x.id === socket.id);
       if (!p) continue;
       p.connected = false;
+      const drawKey = `${room.code}:${p.resumeToken}`;
+      if (drawTimers.has(drawKey)) { clearTimeout(drawTimers.get(drawKey)); drawTimers.delete(drawKey); }
+      // Suspend the action clock while the 60-second reconnection grace runs.
+      if (room.players[room.turnIndex] === p) clearTurnClock(room);
       // Allow mobile phones to reconnect without forfeiting their cards.
       // Keep the seat, cards and token intact throughout the grace period.
       if (room.status === "playing" && !p.sittingOut) {

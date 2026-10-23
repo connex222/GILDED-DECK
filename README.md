@@ -1,42 +1,44 @@
-# Texas Hold'em Party Poker (Render)
+# The Gilded Deck
 
-A starter multiplayer Texas Hold'em app using Node.js, Express, Socket.IO and Pokersolver.
+A **play-chip-only** multiplayer casino games night for a shared TV and private phone controllers. Built with Node.js 20+, Express, Socket.IO and pokersolver.
 
-## Included
-- TV/table view and phone controller view in one responsive web app
-- Room codes and QR-friendly join URL
-- Server-authoritative deck, Fisher-Yates shuffle, dealing, betting actions, showdown and pot awards
-- Private hole cards sent only to the relevant player's socket
-- Public table state sent to everyone in the room
-- Basic no-limit betting controls: fold, check, call, raise, all-in
-- Render deployment configuration
+## Playable games
 
-## Run locally
+- Texas Hold’em — community-card poker.
+- Omaha — exactly two hole cards and three community cards.
+- Five-Card Draw — exchange up to three cards, maximum six players.
+- Blackjack — dealer stands on 17; fixed 20-chip stake in the current build.
+- British Three-Card Brag — prial, running flush, run, flush, pair, high card.
+
+## Getting started
+
 1. Install Node.js 20 or newer.
-2. Extract this folder and open a terminal inside it.
-3. Run `npm install`
-4. Run `npm start`
-5. Open `http://localhost:3000` on the host screen.
-6. For phone testing on the same network, open `http://YOUR-PC-LAN-IP:3000` on the phone.
+2. Run `npm install` then `npm test`.
+3. Run `npm start` and open `http://localhost:3000` on the TV or host browser.
+4. Create a room and share the room code or joining address.
+5. Each player joins from their phone and selects an avatar. The host starts the game.
 
-## Deploy to Render
-1. Put this folder in a GitHub repository.
-2. In Render, choose **New + → Blueprint** and connect the repository, or create a **Web Service**.
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. Open the generated `https://...onrender.com` URL.
+## Controls and recovery
 
-Render supplies `PORT`; the server binds to `0.0.0.0`.
+The TV is a spectator screen; cards and actions are private to each player's phone. Players have a recoverable seat token kept on their own device. Disconnected players retain their seat for up to 60 seconds. An active disconnected player has their action timer suspended; on resuming, a fresh 30-second turn begins. After grace expiry the server folds or stands as appropriate. Five-Card Draw exchanges also time out to stand pat.
 
-## How to use
-- On the TV/browser, choose **Host / TV**, create a room, and share the room code or URL/QR. The TV is spectator-only and does not occupy a seat.
-- On each phone, open the same URL and choose **Join on phone**.
-- Players enter a name, join the room, and wait.
-- The host starts when at least two players have joined.
+## Hosting on Render
 
-## Important prototype limits
-- This is a playable starter, not a casino-grade or tournament-certified implementation.
-- Game rooms and stacks live in server memory. A Render restart/deploy clears active games.
-- The server is intended for one running instance. Do not scale to multiple instances without shared state/sticky Socket.IO configuration.
-- Betting is simplified for a party game. Side pots are handled by contribution tiers, but edge cases such as tournament clocks, straddles, rebuys, persistence, and extensive adversarial testing are not implemented.
-- Do not use real money. Test hand evaluation and edge cases before public use.
+The repository includes `render.yaml`. Use a single instance. Set `GILDED_STATE_FILE` to a writable persistent path if you want optional between-restart table recovery; an ephemeral free-tier filesystem does not provide durable recovery. Render supplies `PORT`. Avoid redeploying during a live games night.
+
+## Architecture and privacy
+
+- Server-authoritative shuffling, actions and chip settlement.
+- Public `update-tv` state contains no resume token or unrevealed opponent cards.
+- `update-player` carries only the owning player's private hand.
+- Play chips only; **never use real money**.
+
+## Verification and known limits
+
+Run `npm test` and `node --check server.js`. Live Socket.IO tests require installed dependencies. Do not treat skipped integration tests as a release sign-off. This version still lacks configurable clocks, a full cinematic showdown, rebuys, Blackjack split and robust host transfer. The turn timer and reconnection interaction require live multi-device acceptance testing. Client still uses external CDN and QR resources.
+
+## Documentation
+
+- `README.md` — current setup, features and limitations.
+- `DEVELOPMENT-HISTORY.md` — consolidated historical phase notes.
+- `PHASE-27-CONSOLIDATION.md` — changes in this release.
