@@ -6,7 +6,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname,'..','server.
 test('cross-origin Socket.IO requests require an allowlisted origin', () => {
   assert.match(source,/process\.env\.ALLOWED_ORIGINS/);
   assert.match(source,/allowRequest:\s*\(req, callback\)/);
-  assert.match(source,/!origin \|\| allowedOrigins\.has\(origin\)/);
+  assert.match(source,/isAllowedOrigin\(req\.headers\.origin, allowedOrigins\)/);
   assert.doesNotMatch(source,/cors:\s*\{\s*origin:\s*true/);
 });
 test('public room state does not serialise recovery credentials', () => {

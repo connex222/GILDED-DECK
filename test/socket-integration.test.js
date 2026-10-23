@@ -105,3 +105,23 @@ test('Socket.IO serialises rapid duplicate actions and rejects out-of-turn actio
  assert.equal(tv.pot,0);
  assert.equal(tv.players.reduce((sum,p)=>sum+p.stack,0),2000);
 });
+
+// Phase 38: A host may recover its own credentials without taking a player seat.
+test('Socket.IO original host reclaims a disconnected table',{skip:!hasRuntime && 'Install runtime dependencies to run live Socket.IO tests'},async t=>{
+ const port=await serverFixture(t),host=await client(port,t),player=await client(port,t);
+ const room=await host.ack('create-room',{});assert.equal(room.ok,true);
+ const seat=await player.ack('join-room',{roomCode:room.roomCode,name:'Guest'});assert.equal(seat.ok,true);
+ host.close();await delay(100);
+ const recovered=await client(port,t);
+ const result=await recovered.ack('resume-session',{roomCode:room.roomCode,resumeToken:room.resumeToken});
+ assert.equal(result.ok,true);assert.equal(result.isHost,true);
+ const duplicate=await player.ack('join-room',{roomCode:room.roomCode,name:'Second seat'});
+ assert.equal(duplicate.ok,false);
+});
+
+// Phase 39: A browser origin outside ALLOWED_ORIGINS cannot establish a Socket.IO session.
+test('Socket.IO rejects disallowed browser origins',{skip:!hasRuntime && 'Install runtime dependencies to run live Socket.IO tests'},async t=>{
+ const port=await serverFixture(t);
+ const response=await fetch(`http://127.0.0.1:${port}/socket.io/?EIO=4&transport=polling`,{headers:{Origin:'https://untrusted.example'}});
+ assert.notEqual(response.status,200);
+});

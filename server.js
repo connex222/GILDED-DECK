@@ -9,21 +9,18 @@ const {drawCapacity, validateDrawIndices} = require("./draw-capacity");
 const {socketHasSeat, canJoinRoom} = require("./session-guards");
 const {createEventGuard} = require("./event-guard");
 const {shouldExpireRoom, DEFAULT_IDLE_MS} = require("./room-lifecycle");
+const {parseAllowedOrigins, isAllowedOrigin, safePort, DEFAULT_MAX_HTTP_BUFFER} = require("./transport-security");
 
 const app = express();
 const server = http.createServer(app);
 // Restrict browser cross-origin connections. Same-origin requests need no CORS grant.
-const configuredOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
-const allowedOrigins = new Set([...configuredOrigins, "http://localhost:3000", "http://127.0.0.1:3000"]);
-function originAllowed(origin, callback) {
-  if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-  return callback(new Error("Origin not permitted"), false);
-}
-const io = new Server(server, { cors: { origin: [...allowedOrigins], methods: ["GET", "POST"] }, allowRequest: (req, callback) => {
-  const origin = req.headers.origin;
-  callback(null, !origin || allowedOrigins.has(origin));
-} });
-const PORT = process.env.PORT || 3000;
+const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS, {production: process.env.NODE_ENV === 'production'});
+const io = new Server(server, {
+  cors: {origin: [...allowedOrigins], methods: ['GET', 'POST']},
+  maxHttpBufferSize: DEFAULT_MAX_HTTP_BUFFER,
+  allowRequest: (req, callback) => callback(null, isAllowedOrigin(req.headers.origin, allowedOrigins))
+});
+const PORT = safePort(process.env.PORT || 3000);
 
 app.use(express.static("public"));
 app.get("/health", (_req, res) => res.status(200).json({ ok: true }));
@@ -945,3 +942,33 @@ io.on("connection", socket => {
 
 loadRooms();
 server.listen(PORT, "0.0.0.0", () => console.log(`Gilded Deck server listening on ${PORT}`));
+// Stop accepting new connections during platform shutdown; do not silently drop
+// in-flight room snapshots. Live hands are recovered to their pre-hand lobby state.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down on ${signal}`);
+  clearInterval(roomSweep);
+  for (const room of rooms.values()) {
+    cancelHostTransfer(room);
+    cancelNextHand(room);
+    clearTurnClock(room);
+    clearDrawTimers(room);
+    for (const player of room.players) cancelDisconnectTimer(player.resumeToken);
+  }
+  if (saveTimer) clearTimeout(saveTimer);
+  if (STATE_FILE) {
+    try {
+      const data = {version:1, rooms:[...rooms.values()].map(room => room.status === 'playing' && room.preHandSnapshot ? room.preHandSnapshot : snapshotRoom(room))};
+      fs.mkdirSync(path.dirname(STATE_FILE), {recursive:true});
+      const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data), {mode:0o600});
+      fs.renameSync(tmp, STATE_FILE);
+    } catch (error) { console.error('Shutdown persistence failed:', error.message); process.exitCode = 1; }
+  }
+  io.close(() => server.close(() => process.exit(process.exitCode || 0)));
+  setTimeout(() => process.exit(1), 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

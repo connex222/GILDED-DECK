@@ -646,3 +646,29 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - The test asserts that rejected requests leave the chip ledger and active turn unchanged, that the TV never receives player recovery tokens or the server deck, and that completed heads-up hands conserve the initial 2,000 chips.
 - This is a **test addition**, not a claim that the live integration suite has run. Run `npm install && npm test` in a network-enabled environment and resolve every skipped test before multiplayer sign-off.
 - The project continues to contain **one Markdown file**, this README.
+
+---
+
+## Phases 38–40 — Multiplayer reliability and deployment security (23 October 2026)
+
+### Phase 38 — Integration coverage
+- Added a real Socket.IO regression scenario for the original host reclaiming a disconnected table using its private recovery token; confirms that a connected player cannot acquire a duplicate seat.
+- Retained existing integration coverage for Brag, reconnects, forged tokens, and rapid duplicate actions.
+- **Execution limitation:** live Socket.IO scenarios cannot run in this offline environment because Express, Socket.IO and pokersolver are not installed. These tests must run on a network-enabled machine before acceptance.
+
+### Phase 39 — Connection security
+- Added a reusable, testable origin-policy module. Production origins must be explicit HTTPS origins, with no wildcards, credentials, or paths. Local HTTP origins are permitted in development only.
+- Added a live Socket.IO integration scenario for rejection of an unapproved browser origin.
+- Limited Engine.IO message payloads to 32 KiB to reduce oversized-message exposure. This is not a substitute for edge-level DDoS controls.
+
+### Phase 40 — Deployment and shutdown reliability
+- Validated the configured listening port and fail fast for invalid values.
+- Added graceful SIGTERM/SIGINT handling, cancellation of timers, and a final atomic persistence snapshot when `GILDED_STATE_FILE` is configured. An in-progress hand is restored to its pre-hand lobby snapshot, as before.
+- Added focused deterministic configuration tests and updated the older source-pattern security check to follow the new module implementation.
+
+### Verification and release gates
+- Run `npm ci` (or `npm install` if no lockfile is present), then `npm test` on a network-enabled CI runner. **No skipped integration tests** should remain before sign-off.
+- Verify two or more real phones and a TV on separate networks, disconnect/reconnect during a hand, host transfer after 30 seconds, rebuys, simultaneous actions, all five game modes, and chip conservation.
+- On Render set `NODE_ENV=production`, `ALLOWED_ORIGINS=https://YOUR-REAL-RENDER-HOSTNAME` and `GILDED_STATE_FILE` only if persistent disk storage is provisioned. Never use the example hostname literally.
+- Run a graceful-shutdown/restart drill against a real persistent disk before relying on room recovery.
+- **Not yet verified:** live Socket.IO integration execution, actual Render deployment, multi-device acceptance, and persistence across a real platform restart.
