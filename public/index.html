@@ -73,6 +73,11 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
 @media(min-width:550px){.avatar-picker{grid-template-columns:repeat(8,minmax(0,1fr));max-height:none}}
 @media(max-width:420px){.seat-avatar{width:42px;height:42px}}
 </style>
+<style id="phase32-showdown-polish">
+#players .seat .winning-card{transform:translateY(-9px);border:2px solid #f7cf69;box-shadow:0 0 16px #f6c44cbb;filter:brightness(1.12);transition:transform .25s ease,box-shadow .25s ease}
+#players .seat.reveal-winner{box-shadow:0 0 0 2px #f6c65a,0 0 28px #eebc5266}
+@media(prefers-reduced-motion:reduce){#players .seat .winning-card{transform:none;transition:none}}
+</style>
 </head>
 <body class="min-h-screen"><div class="ambient-light"></div>
 <header class="border-b border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
@@ -137,7 +142,7 @@ const socket = io();
 let soundOn = false, audioCtx = null, lastStreet = null, lastTurn = null;
 let ambienceOn = false, ambienceNodes = null;
 function tone(freq=440,duration=.09,type='sine',gain=.035){if(!soundOn)return;try{audioCtx ||= new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const osc=audioCtx.createOscillator(),vol=audioCtx.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);vol.gain.setValueAtTime(gain,audioCtx.currentTime);vol.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);osc.connect(vol);vol.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+duration)}catch(e){console.warn('Audio unavailable',e)}}
-function cue(name){if(name==='deal'){tone(310,.08,'triangle');setTimeout(()=>tone(390,.09,'triangle'),90)}else if(name==='turn'){tone(550,.11);setTimeout(()=>tone(740,.16),115)}else if(name==='win'){[523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.3,'sine',.045),i*110))}else tone(260,.08,'triangle')}
+function cue(name){if(name==='deal'){tone(310,.08,'triangle');setTimeout(()=>tone(390,.09,'triangle'),90)}else if(name==='turn'){tone(550,.11);setTimeout(()=>tone(740,.16),115)}else if(name==='reveal'){tone(420,.12,'triangle',.035);setTimeout(()=>tone(620,.16,'sine',.03),110)}else if(name==='win'){[523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.3,'sine',.045),i*110))}else tone(260,.08,'triangle')}
 // A quiet, locally synthesised casino-room texture; no external audio files or autoplay.
 function stopAmbience(){
  if(!ambienceNodes)return;
@@ -299,6 +304,16 @@ setInterval(() => {
 let revealTimers = [];
 let revealHandKey = null;
 let revealVisibleCount = 0;
+let showdownCelebratedKey = null;
+function sameCard(a,b){return a && b && a.rank === b.rank && a.suit === b.suit;}
+function announceRevealOutcome(state){
+ const key = `${state.code}:${state.showdown?.handNumber}`;
+ if (!state.showdown || showdownCelebratedKey === key) return;
+ showdownCelebratedKey = key;
+ const own = state.showdown.winners?.find(w => w.id === playerId);
+ if (own && playerId) { if (navigator.vibrate) navigator.vibrate([100,50,180]); cue('win'); }
+ else if (playerId && navigator.vibrate) navigator.vibrate(70);
+}
 function stopRevealTimers(){ for(const timer of revealTimers)clearTimeout(timer); revealTimers=[]; }
 function revealDelay(){return window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:1500;}
 function renderShowdownStage(state){
@@ -311,9 +326,10 @@ function renderShowdownStage(state){
  const key=`${state.code}:${showdown.handNumber}:${state.gameType}`;
  if(key!==revealHandKey){
    stopRevealTimers();revealHandKey=key;revealVisibleCount=revealDelay()===0?reveals.length:0;
-   reveals.forEach((_,i)=>revealTimers.push(setTimeout(()=>{revealVisibleCount=i+1;updateRevealSeats();if(i===reveals.length-1)renderShowdownStage(publicState);},(i+1)*revealDelay())));
+   reveals.forEach((_,i)=>revealTimers.push(setTimeout(()=>{revealVisibleCount=i+1;updateRevealSeats();cue('reveal');if(i===reveals.length-1){renderShowdownStage(publicState);announceRevealOutcome(publicState);}},(i+1)*revealDelay())));
  }
  const complete=revealVisibleCount>=reveals.length;
+ if(complete)announceRevealOutcome(state);
  const title=stage.querySelector('h2');title.textContent=complete?'WINNERS & POT AWARDS':'THE SHOWDOWN';
  const details=stage.querySelector('.showdown-details');details.replaceChildren();
  if(complete){
@@ -332,6 +348,10 @@ function updateRevealSeats(){
   panel.classList.toggle('reveal-pending',!visible);
   panel.setAttribute('aria-hidden',String(!visible));
   seat.classList.toggle('reveal-winner',visible&&!!revealList[index]?.amount);
+  if(visible && revealList[index]?.amount){
+   const best = revealList[index].bestCards || [];
+   panel.querySelectorAll('.card').forEach((el,i)=>el.classList.toggle('winning-card',best.some(c=>sameCard(c,revealList[index].cards[i]))));
+  }
  });
 }
 socket.on("update-tv", state => {

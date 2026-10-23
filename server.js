@@ -10,7 +10,17 @@ const {socketHasSeat, canJoinRoom} = require("./session-guards");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: true } });
+// Restrict browser cross-origin connections. Same-origin requests need no CORS grant.
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+const allowedOrigins = new Set([...configuredOrigins, "http://localhost:3000", "http://127.0.0.1:3000"]);
+function originAllowed(origin, callback) {
+  if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+  return callback(new Error("Origin not permitted"), false);
+}
+const io = new Server(server, { cors: { origin: [...allowedOrigins], methods: ["GET", "POST"] }, allowRequest: (req, callback) => {
+  const origin = req.headers.origin;
+  callback(null, !origin || allowedOrigins.has(origin));
+} });
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static("public"));
@@ -460,6 +470,23 @@ function settlePots(room, winnersByHand) {
     id, name: room.players.find(p => p.id === id)?.name, amount
   }));
 }
+// Convert pokersolver's selected winning cards back to the public card shape.
+// Only called after a contested hand is finished; no private hand leaks mid-play.
+function bestCardsForReveal(hand, room, player) {
+  if (!hand) return [];
+  if (room.gameType === "brag") return player.hole.slice();
+  const winning = hand.raw?.cards || [];
+  const available = [...player.hole, ...((room.gameType === "draw") ? [] : room.community)];
+  const result = [];
+  const used = new Set();
+  for (const c of winning.slice(0, 5)) {
+    const rank = String(c.value || c.rank || '').toUpperCase().replace('10','T');
+    const suit = String(c.suit || '').toLowerCase();
+    const index = available.findIndex((item, i) => !used.has(i) && cardCode(item).toUpperCase() === (rank + suit).toUpperCase());
+    if (index >= 0) { used.add(index); result.push(available[index]); }
+  }
+  return result;
+}
 function finishHand(room, winners) {
   const hands = new Map();
   if (room.community.length === 5 || room.gameType === "draw" || room.gameType === "brag") {
@@ -478,7 +505,7 @@ function finishHand(room, winners) {
   room.showdown = contested ? {
     handNumber: room.handNumber, pots: room.potResults || [],
     revealed: room.players.filter(p => !p.folded && p.hole.length).map(p => ({
-      id: p.id, name: p.name, cards: p.hole, handName: hands.get(p.id)?.descr || "Hand",
+      id: p.id, name: p.name, cards: p.hole, handName: hands.get(p.id)?.descr || "Hand", bestCards: bestCardsForReveal(hands.get(p.id), room, p),
       amount: room.winners.find(w => w.id === p.id)?.amount || 0
     })),
     winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount }))

@@ -58,3 +58,9 @@ If the TV host disconnects, after 30 seconds the longest-seated connected player
 
 ## Phase 31
 The TV presents a paced showdown after contested hands, with hand descriptions, winning seat emphasis, and main/side pot awards. The host or viewer may skip the animation. For reduced-motion preferences the reveal is immediate. See `PHASE-31.md` for limitations.
+
+## Phase 32
+Showdown winning-card emphasis, reveal audio cue and optional phone outcome haptics. See `PHASE-32.md` for limitations.
+
+## Phase 33 browser origin security
+Set `ALLOWED_ORIGINS` to a comma-separated list of exact browser origins (scheme, hostname and optional port), e.g. `https://example.onrender.com`. Local development origins `http://localhost:3000` and `http://127.0.0.1:3000` are allowed automatically. A browser served from another origin will not be permitted to establish a Socket.IO connection. See `PHASE-33.md` for limitations.
