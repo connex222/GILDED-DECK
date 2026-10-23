@@ -464,6 +464,15 @@ function settlePots(room, winnersByHand) {
     const contributors = room.players.filter(p => p.committed >= level);
     const amount = (level - previous) * contributors.length;
     const contenders = contributors.filter(p => !p.folded);
+    // A tier with no live contender is unmatched money: refund each contributor.
+    // Never discard chips simply because all contributors to this tier folded.
+    if (contenders.length === 0) {
+      const refund = level - previous;
+      for (const p of contributors) awards.set(p.id, (awards.get(p.id) || 0) + refund);
+      potResults.push({ type: "Unmatched refund", amount, winners: contributors.map(p => ({ id: p.id, name: p.name })) });
+      previous = level;
+      continue;
+    }
     let winners = contenders;
     if (contenders.length > 1) {
       const solved = contenders.map(p => ({ p, hand: winnersByHand.get(p.id) })).filter(x => x.hand);

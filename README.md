@@ -629,3 +629,20 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - The rate limit is per Socket.IO connection, not a distributed IP-level DDoS defence.
 - An abandoned room can only expire once all clients are disconnected; stale rooms with active sockets remain available.
 - Rooms restored from persistence receive a new activity timestamp on server restart.
+
+---
+
+## Phase 36 — Pot conservation and settlement regression
+
+- Added 1,000 seeded multi-player pot scenarios covering uneven contributions, ties, folds and all-in-style side pots, plus a deterministic replay test.
+- Fixed a settlement edge case: when a contribution tier has no remaining eligible contender, its contributions are refunded to the contributors instead of being lost. Refunds are reported separately in the pot summary.
+- Verified with `node --check server.js` and `npm test`: **105 passed, 0 failed, 3 skipped**. The skipped tests are live Socket.IO integration tests requiring unavailable runtime dependencies.
+- Documentation remains consolidated in this single README. There are no separate Phase Markdown files.
+- Still outstanding: live simultaneous-action integration tests, host reconnection tests and full multiplayer acceptance testing. This phase has not been uploaded to GitHub or deployed to Render.
+
+## Phase 37 — Concurrent-action multiplayer checks
+
+- Added a live Socket.IO regression scenario for out-of-turn requests and rapid duplicate actions.
+- The test asserts that rejected requests leave the chip ledger and active turn unchanged, that the TV never receives player recovery tokens or the server deck, and that completed heads-up hands conserve the initial 2,000 chips.
+- This is a **test addition**, not a claim that the live integration suite has run. Run `npm install && npm test` in a network-enabled environment and resolve every skipped test before multiplayer sign-off.
+- The project continues to contain **one Markdown file**, this README.

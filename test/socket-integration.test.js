@@ -75,3 +75,33 @@ test('Socket.IO rejects forged recovery tokens without evicting the seated playe
  const other=await attacker.ack('join-room',{roomCode:room.roomCode,name:'Other'});
  assert.equal(other.ok,true);assert.notEqual(other.playerId,seat.playerId);
 });
+
+// Phase 37: actions from the wrong seat, including two packets in rapid succession,
+// must not alter the authoritative chip ledger or expose private cards on the TV.
+test('Socket.IO serialises rapid duplicate actions and rejects out-of-turn actions',{skip:!hasRuntime && 'Install runtime dependencies to run live Socket.IO tests'},async t=>{
+ const port=await serverFixture(t),host=await client(port,t),a=await client(port,t),b=await client(port,t);
+ let tv;host.on('update-tv',s=>tv=s);
+ const h=await host.ack('create-room',{});
+ const aj=await a.ack('join-room',{roomCode:h.roomCode,name:'Alice'});
+ const bj=await b.ack('join-room',{roomCode:h.roomCode,name:'Bob'});
+ assert.equal(h.ok,true);assert.equal(aj.ok,true);assert.equal(bj.ok,true);
+ host.send('start-game',{roomCode:h.roomCode});await delay(100);
+ assert.equal(tv.status,'playing');
+ assert.equal(tv.players.reduce((sum,p)=>sum+p.stack,0)+tv.pot,2000);
+ assert.equal(JSON.stringify(tv).includes(aj.resumeToken),false);
+ assert.equal(JSON.stringify(tv).includes(bj.resumeToken),false);
+ assert.equal(Object.prototype.hasOwnProperty.call(tv,'deck'),false);
+ assert.equal(Object.prototype.hasOwnProperty.call(tv,'hole'),false);
+ const actor=tv.turnId===aj.playerId?a:b;
+ const nonActor=tv.turnId===aj.playerId?b:a;
+ const before=JSON.stringify({pot:tv.pot,stacks:tv.players.map(p=>p.stack),turnId:tv.turnId});
+ nonActor.send('player-action',{roomCode:h.roomCode,action:'call'});
+ await delay(40);
+ assert.equal(JSON.stringify({pot:tv.pot,stacks:tv.players.map(p=>p.stack),turnId:tv.turnId}),before);
+ actor.send('player-action',{roomCode:h.roomCode,action:'fold'});
+ actor.send('player-action',{roomCode:h.roomCode,action:'fold'});
+ await delay(100);
+ assert.equal(tv.status,'complete');
+ assert.equal(tv.pot,0);
+ assert.equal(tv.players.reduce((sum,p)=>sum+p.stack,0),2000);
+});
