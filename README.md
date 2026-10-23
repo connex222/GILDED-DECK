@@ -672,3 +672,33 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - On Render set `NODE_ENV=production`, `ALLOWED_ORIGINS=https://YOUR-REAL-RENDER-HOSTNAME` and `GILDED_STATE_FILE` only if persistent disk storage is provisioned. Never use the example hostname literally.
 - Run a graceful-shutdown/restart drill against a real persistent disk before relying on room recovery.
 - **Not yet verified:** live Socket.IO integration execution, actual Render deployment, multi-device acceptance, and persistence across a real platform restart.
+
+
+## Phase 41 — TV, phone and keyboard polish
+
+- Added phone safe-area support for notched displays and home-indicator insets.
+- Added consistent visible keyboard focus for buttons, form controls and avatar choices.
+- Improved minimum touch-target heights on phone layouts and disabled-button affordance.
+- Added explicit live announcements for connection status and setup errors.
+- Added a large-screen table presentation adjustment and high-contrast preference support.
+- These changes require device/browser accessibility verification before release.
+
+## Phase 42 — Five-game and sound audit
+
+- Added packaged-asset and user-interface regression tests for all five game selections, Blackjack and Brag controls, 16 avatar images and the main marquee logo.
+- Added checks for the locally synthesised, opt-in sound cues (deal, turn, reveal, win), the separate ambience toggle, and visibility handling.
+- Preserved the single Markdown file policy: this README contains the development history and release notes.
+- These checks establish that the UI controls and assets are present. They **do not** establish correct live gameplay, audible output on real devices, or complete accessibility. Live multi-device acceptance and the dependency-gated Socket.IO integration tests remain required.
+
+## Phase 43 — Release candidate verification gate (23 October 2026)
+
+- Added `.github/workflows/release-check.yml` to install dependencies with Node.js 22, check server syntax, run the complete test suite, and enforce exactly one Markdown document.
+- Added `npm run test:release` and `test/release-gate.cjs`. Unlike the normal offline unit-test run, this command **fails** if Socket.IO, Express or pokersolver are missing, so skipped multiplayer tests cannot be mistaken for release certification.
+- Before release: verify the GitHub Actions check is green **and has zero skipped tests**; test all five games on a TV and at least two phones, sound on/off, reconnection and host recovery, side-pot chip conservation, and cross-network play. Check production `ALLOWED_ORIGINS` matches the real HTTPS site and check Render logs and persistent storage configuration.
+- This phase does not claim to have performed live multi-device acceptance testing or published the ZIP to GitHub. Render auto-deploys only after code is pushed to the connected `main` branch.
+
+## Phase 44 — Strict no-skip release runner
+
+- Replaced the release command with `test/strict-release.cjs`, which verifies dependencies, executes the entire `*.test.js` suite and fails if any tests are skipped, if the test process fails, or if the TAP summary is missing.
+- The normal offline `npm test` remains available for unit checks; it does **not** certify multiplayer.
+- Deployment remains blocked until the Phase 44 files are committed to GitHub and the strict CI check passes with zero skipped tests.

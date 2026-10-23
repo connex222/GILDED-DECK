@@ -2,12 +2,13 @@
   "name": "gilded-deck",
   "version": "1.0.0",
   "private": true,
-  "description": "The Gilded Deck — multiplayer casino card games for TV and phones",
+  "description": "The Gilded Deck \u2014 multiplayer casino card games for TV and phones",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:release": "node test/strict-release.cjs"
   },
   "engines": {
     "node": ">=20"

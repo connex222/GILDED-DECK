@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>THE GILDED DECK | Private Card Room</title>
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -78,11 +78,24 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
 #players .seat.reveal-winner{box-shadow:0 0 0 2px #f6c65a,0 0 28px #eebc5266}
 @media(prefers-reduced-motion:reduce){#players .seat .winning-card{transform:none;transition:none}}
 </style>
+<style id="phase41-responsive-accessibility">
+/* TV-safe presentation, mobile safe areas and visible keyboard focus. */
+:root{color-scheme:dark}
+body{padding-bottom:env(safe-area-inset-bottom,0px)}
+header{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+button,select,input{touch-action:manipulation}
+button:focus-visible,select:focus-visible,input:focus-visible,.avatar-choice:focus-visible{outline:3px solid #ffe08a!important;outline-offset:3px!important}
+button:disabled{opacity:.55;cursor:not-allowed}
+#setupError:not(:empty){border-left:3px solid #fda4af;padding-left:10px}
+@media(max-width:540px){#setup button,.sound-control{min-height:44px}#setup input{min-height:44px}#game .btn{min-height:44px}}
+@media(min-width:1600px){main{max-width:1480px!important}.table-felt{min-height:520px}.brand-title{font-size:clamp(20px,2vw,32px)}}
+@media(prefers-contrast:more){.text-zinc-400{color:#e4e4e7!important}.btn{border:2px solid currentColor}}
+</style>
 </head>
 <body class="min-h-screen"><div class="ambient-light"></div>
 <header class="border-b border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
  <div class="brand-mark"><div class="brand-icon">♠</div><div><div class="brand-title">THE GILDED DECK</div><div class="text-xs text-amber-100/60 tracking-widest">PRIVATE CARD ROOM · HOLD’EM</div></div></div>
- <div class="flex items-center gap-2"><button id="ambienceToggle" class="sound-control" aria-pressed="false">◌ Ambience off</button><button id="soundToggle" class="sound-control" aria-pressed="false">♫ Sound off</button><div id="connection" class="text-xs text-amber-300">Connecting…</div></div>
+ <div class="flex items-center gap-2"><button id="ambienceToggle" class="sound-control" aria-pressed="false">◌ Ambience off</button><button id="soundToggle" class="sound-control" aria-pressed="false">♫ Sound off</button><div id="connection" class="text-xs text-amber-300" role="status" aria-live="polite">Connecting…</div></div>
 </header>
 <main class="max-w-6xl mx-auto p-3 sm:p-6">
 <section id="setup" class="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-7 mt-5">
@@ -92,7 +105,7 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
   <button id="hostBtn" class="btn bg-emerald-700 hover:bg-emerald-600">Host / TV display</button>
   <div class="flex gap-2"><input id="roomInput" maxlength="4" class="uppercase min-w-0 w-full rounded-xl p-3" placeholder="ROOM"><button id="joinBtn" class="btn bg-indigo-600 hover:bg-indigo-500">Join</button></div>
  </div>
- <p id="setupError" class="text-rose-400 text-sm mt-3"></p><div class="collection"><span class="game-pill">♠ Texas Hold’em · Live</span><span class="game-pill" title="Available game">♦ Omaha · Live</span><span class="game-pill" title="Available game">♣ Five-Card Draw · Live</span><span class="game-pill" title="Available game">♥ Blackjack · Live</span><span class="game-pill" title="Available game">♦ Three-Card Brag · Live</span></div>
+ <p id="setupError" class="text-rose-400 text-sm mt-3" role="alert" aria-live="assertive"></p><div class="collection"><span class="game-pill">♠ Texas Hold’em · Live</span><span class="game-pill" title="Available game">♦ Omaha · Live</span><span class="game-pill" title="Available game">♣ Five-Card Draw · Live</span><span class="game-pill" title="Available game">♥ Blackjack · Live</span><span class="game-pill" title="Available game">♦ Three-Card Brag · Live</span></div>
 </section>
 <section id="game" class="hidden">
  <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
