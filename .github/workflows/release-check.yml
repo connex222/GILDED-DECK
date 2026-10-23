@@ -1,0 +1,48 @@
+name: Gilded Deck release checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install game dependencies
+        run: npm install --no-audit --no-fund --package-lock=false
+      - name: Verify syntax
+        run: node --check server.js
+      - name: Run all tests including live Socket.IO
+        run: npm run test:release
+      - name: Confirm single Markdown document
+        shell: bash
+        run: |
+          count=$(find . -path './node_modules' -prune -o -type f \( -iname '*.md' -o -iname '*.markdown' \) -print | wc -l)
+          test "$count" -eq 1
+          test -f README.md
+  smoke:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check deployed health and homepage
+        env:
+          GILDED_SMOKE_URL: https://gilded-deck.onrender.com
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if node test/deployment-smoke.cjs; then exit 0; fi
+            echo "Smoke attempt $attempt failed; retrying in 20 seconds"
+            sleep 20
+          done
+          exit 1
