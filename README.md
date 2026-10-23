@@ -46,3 +46,9 @@ Run `npm test` and `node --check server.js`. Live Socket.IO tests require instal
 ## Phase 28 — Cash-game rebuys
 
 When your play-chip stack reaches zero, the phone displays **Rebuy 1,000 play chips** between hands. Each rebuy increases your total bought-in chips and the visible rebuy tally. Rebuys are not available during a hand. These are play chips only; no payments are involved. Tournament rebuy restrictions are not yet implemented.
+
+## Phase 29 — Between-hand table flow
+
+After a completed hand, a 10-second server-controlled countdown starts if enough connected, funded players are available. Any seated player can press **Deal now** to skip the wait. The host can pause or resume the automatic dealing sequence. Each player can choose **Sit out next hand** and **I'm back next hand** without surrendering their seat or chips. A disconnected or underfunded player is not counted towards the next deal. Blackjack requires one eligible seat; the other games require two.
+
+**Limitations:** The host is still a single point of failure for settings and pause controls; automatic host transfer is not implemented. Timer and socket integration tests must run with installed dependencies before production deployment.

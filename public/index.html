@@ -86,7 +86,7 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
 <section id="game" class="hidden">
  <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
   <div><div class="text-sm text-zinc-400">ROOM CODE</div><div id="roomCode" class="text-3xl font-black tracking-[.2em]">----</div></div>
-  <div class="flex flex-wrap gap-2 items-center"><label for="gameSelect" class="text-amber-200 text-xs">Game</label><select id="gameSelect" class="rounded-lg bg-emerald-950 text-amber-100 border border-amber-600 p-2"><option value="holdem">Texas Hold’em</option><option value="omaha">Omaha (4 cards)</option><option value="draw">Five-Card Draw</option><option value="blackjack">Blackjack</option><option value="brag">Three-Card Brag</option></select><button id="copyLink" class="btn bg-zinc-800">Copy join link</button><button id="startBtn" class="btn bg-emerald-700 hidden">Start / Next hand</button></div>
+  <div class="flex flex-wrap gap-2 items-center"><label for="gameSelect" class="text-amber-200 text-xs">Game</label><select id="gameSelect" class="rounded-lg bg-emerald-950 text-amber-100 border border-amber-600 p-2"><option value="holdem">Texas Hold’em</option><option value="omaha">Omaha (4 cards)</option><option value="draw">Five-Card Draw</option><option value="blackjack">Blackjack</option><option value="brag">Three-Card Brag</option></select><button id="copyLink" class="btn bg-zinc-800">Copy join link</button><button id="startBtn" class="btn bg-emerald-700 hidden">Start / Next hand</button><button id="pauseBtn" class="btn bg-zinc-700 hidden">Pause table</button><span id="nextHandCountdown" class="text-amber-200 text-sm" aria-live="polite"></span></div>
  </div>
  <div id="qrWrap" class="hidden bg-white text-zinc-900 rounded-xl p-3 w-fit mb-4">
   <div class="font-bold text-sm mb-2">Scan to join</div><img id="qr" alt="QR code to join table" width="150" height="150"><div id="qrUrl" class="text-[10px] max-w-[150px] break-all mt-1"></div>
@@ -109,7 +109,7 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
    <div class="bg-zinc-800 rounded-xl p-3"><div class="text-xs text-zinc-400">Committed</div><div id="myCommitted" class="font-black text-xl">0</div></div>
    <div class="bg-zinc-800 rounded-xl p-3"><div class="text-xs text-zinc-400">To call</div><div id="toCall" class="font-black text-xl">0</div></div>
   </div>
-  <div id="rebuyPanel" class="hidden rounded-xl border border-amber-500 bg-emerald-950 p-4 mb-4"><p class="font-bold text-amber-200 mb-2">Out of chips? Rejoin the action.</p><button id="rebuyBtn" class="btn bg-amber-500 text-zinc-950 font-bold w-full p-3">Rebuy 1,000 play chips</button><p id="rebuyInfo" class="text-sm text-amber-100 mt-2"></p></div>
+  <div class="flex flex-wrap gap-2 mb-3"><button id="dealNowBtn" class="btn bg-amber-600 text-zinc-950 p-3 hidden">Deal now</button><button id="sitOutBtn" class="btn bg-zinc-700 p-3">Sit out next hand</button></div><div id="rebuyPanel" class="hidden rounded-xl border border-amber-500 bg-emerald-950 p-4 mb-4"><p class="font-bold text-amber-200 mb-2">Out of chips? Rejoin the action.</p><button id="rebuyBtn" class="btn bg-amber-500 text-zinc-950 font-bold w-full p-3">Rebuy 1,000 play chips</button><p id="rebuyInfo" class="text-sm text-amber-100 mt-2"></p></div>
   <div id="blackjackActions" class="hidden grid grid-cols-3 gap-2 mb-3"><button data-bj="hit" class="btn bg-emerald-700">Hit</button><button data-bj="stand" class="btn bg-amber-600 text-zinc-950">Stand</button><button data-bj="double" class="btn bg-indigo-700">Double</button></div><div id="blackjackResult" class="text-amber-200 font-bold mb-2"></div><div id="bragControls" class="hidden grid grid-cols-2 gap-2 mb-3"><button id="bragLook" class="btn bg-amber-700">Look at cards</button><button id="bragSee" class="btn bg-indigo-700">See opponent</button><button id="bragPlay" class="btn bg-emerald-700">Play stake</button><button id="bragFold" class="btn bg-rose-700">Fold</button><button id="bragRaise" class="btn bg-violet-700">Raise stake</button><p id="bragRules" class="text-xs text-amber-200 col-span-2">Blind pays 1× · Seen pays 2×. A see costs 2×.</p></div><div id="actions" class="hidden">
    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
     <button data-action="fold" class="btn bg-rose-700">Fold</button><button id="checkCall" class="btn bg-emerald-700">Check</button><button id="raiseAction" class="btn bg-indigo-600">Raise</button><button data-action="all-in" class="btn bg-amber-600 text-zinc-950">All-In</button>
@@ -242,6 +242,9 @@ $("copyLink").onclick = async () => {
 };
 $("rebuyBtn").onclick = () => socket.emit("rebuy",{roomCode}, result => { if(!result?.ok) $("toast").textContent = result?.error || "Rebuy unavailable"; });
 $("startBtn").onclick = () => socket.emit("start-game", {roomCode});
+$("dealNowBtn").onclick = () => socket.emit("deal-now", {roomCode}, r => {if(!r?.ok) toast(r?.error || "Cannot deal now");});
+$("sitOutBtn").onclick = () => socket.emit("set-sit-out", {roomCode,sittingOut:!privateState?.sitOutNext}, r => {if(!r?.ok) toast(r?.error || "Cannot change seat");});
+$("pauseBtn").onclick = () => socket.emit("pause-table", {roomCode,paused:!publicState?.paused});
 $("community").replaceChildren(...Array.from({length:5},()=>cardEl(null,true)));
 const selectedDraw = new Set();
 $("drawSubmit").onclick = () => socket.emit("draw-cards",{roomCode,indices:[...selectedDraw]},result=>{
@@ -278,6 +281,8 @@ setInterval(() => {
   el.textContent = `⏱ ${seconds}s`;
   el.setAttribute("aria-label", `${seconds} seconds remaining`);
  });
+ const nextCountdown = document.getElementById("nextHandCountdown");
+ if (nextCountdown && publicState?.nextHandDeadline && !publicState.paused) nextCountdown.textContent = `Next hand in ${Math.max(0, Math.ceil((publicState.nextHandDeadline - Date.now())/1000))}s`;
  const badge = document.getElementById("turnBadge");
  if (badge && privateState?.isTurn && privateState?.turnDeadline) {
   const seconds = Math.max(0, Math.ceil((privateState.turnDeadline - Date.now()) / 1000));
@@ -297,6 +302,10 @@ socket.on("update-tv", state => {
  $("currentBet").textContent = `Current bet: ${state.currentBet}`;
  $("streetLabel").textContent = state.street.toUpperCase();
  $("message").textContent = state.message || "";
+ $("pauseBtn").classList.toggle("hidden", !isHost);
+ $("pauseBtn").textContent = state.paused ? "Resume table" : "Pause table";
+ $("dealNowBtn").classList.toggle("hidden", isHost || state.status === "playing" || state.paused);
+ $("nextHandCountdown").textContent = state.paused ? "TABLE PAUSED" : "";
  const community = state.community || [];
  $("community").replaceChildren(...(["draw","blackjack","brag"].includes(state.gameType) ? [] : Array.from({length:5},(_,i)=>community[i] ? cardEl(community[i]) : cardEl(null,true))));
  $("players").replaceChildren(...state.players.map(p => {
@@ -331,6 +340,7 @@ socket.on("update-player", state => {
  if (state.playerId !== playerId) return;
  privateState = state;
  $("myStack").textContent = state.stack;
+ $("sitOutBtn").textContent = state.sitOutNext ? "I'm back next hand" : "Sit out next hand";
  $("rebuyPanel").classList.toggle("hidden", !state.canRebuy);
  $("rebuyInfo").textContent = `Rebuys: ${state.rebuys || 0} · Total bought in: ${state.totalBuyIn || 1000} · Net: ${state.netResult ?? 0}`;
  $("myCommitted").textContent = state.committed;
