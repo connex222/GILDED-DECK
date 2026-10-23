@@ -16,6 +16,12 @@
 input,select{color:#18181b}
 
 :root{--gold:#f2c775;--deep:#06140f}body{background:radial-gradient(ellipse at 50% -25%,#244a3a 0%,#091a16 45%,#030a09 100%);background-attachment:fixed;letter-spacing:.012em}body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.15;background-image:repeating-linear-gradient(110deg,transparent 0 3px,#ffffff08 4px 5px);z-index:-1}header{background:#07120fdb!important;backdrop-filter:blur(18px);border-color:#b98d4350!important}#setup,#controller{background:linear-gradient(145deg,#17362d,#091a16 65%,#0b1815)!important;border:1px solid #d8a95865!important;box-shadow:0 28px 80px #0008,inset 0 1px #f7db9b18}#setup{position:relative;overflow:hidden}#setup:before{content:'♠';position:absolute;right:-20px;top:-60px;font-size:250px;color:#d8ad5d0c;pointer-events:none}.table-felt{background:radial-gradient(ellipse at 48% 42%,#197356 0%,#0d4a39 46%,#05291f 77%,#031711 100%);border:13px ridge #9d7135;box-shadow:inset 0 0 0 5px #e2bc70,inset 0 0 0 9px #342318,inset 0 30px 90px #0008,0 24px 0 -10px #2c170c,0 42px 80px #000a;transform:perspective(1400px) rotateX(4deg);transition:transform .5s}.table-felt:hover{transform:perspective(1400px) rotateX(0deg)}.card{border:1px solid #e6d8bc;border-radius:9px;box-shadow:1px 2px 0 #aaa,2px 4px 0 #777,5px 9px 17px #0008;transform:rotate(-1deg);animation:deal-in .35s both}.card:nth-child(even){transform:rotate(2deg)}.card.back{background:repeating-linear-gradient(45deg,#123d38,#123d38 5px,#d2ac64 6px,#d2ac64 7px);border:5px double #f6e6b9}.seat{background:linear-gradient(150deg,#254339,#0b1b18);border:1px solid #bd975e75;box-shadow:0 8px 25px #0008,inset 0 1px #ffffff20}.btn{transition:transform .16s,filter .16s,box-shadow .16s;box-shadow:inset 0 1px #ffffff35,0 5px 12px #0004;cursor:pointer}.btn:hover{transform:translateY(-2px);filter:brightness(1.16)}.btn:active{transform:translateY(2px)}#hostBtn,#startBtn{background:linear-gradient(130deg,#eac67e,#a66a25)!important;color:#101a13}#joinBtn,#raiseAction{background:linear-gradient(130deg,#245d59,#123f45)!important}#pot{color:#f9d990;text-shadow:0 3px 0 #805b29,0 0 30px #f6c45d88}#roomCode{color:#f5d48e}#message{color:#f3d38e}input:not([type=range]){background:#f7f0df;color:#14231e}h1,h2{letter-spacing:-.035em}@keyframes deal-in{from{opacity:0;translate:0 -24px;rotate:-12deg}to{opacity:1;translate:0 0}}.brand-mark{display:flex;align-items:center;gap:12px}.brand-icon{display:grid;place-items:center;width:49px;height:49px;border:2px solid #dcb16d;border-radius:14px;background:linear-gradient(145deg,#1b493c,#071c17);color:#f4cd84;font-size:30px;box-shadow:0 4px 16px #0009,inset 0 1px #fff4}.brand-title{font-family:Georgia,serif;font-weight:900;letter-spacing:.1em;color:#f8dc9e;font-size:clamp(16px,3vw,23px);text-shadow:0 2px 7px #000}.ambient-light{position:fixed;top:-200px;left:35%;width:30vw;height:400px;background:#e6b45510;filter:blur(100px);pointer-events:none}.sound-control{border:1px solid #d1ad6877;border-radius:10px;padding:8px 12px;color:#f4d59a;font-size:12px;background:#142b23}.collection{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.game-pill{border:1px solid #b99b6170;border-radius:999px;padding:8px 12px;color:#f1d8a4;background:#152d25;font-size:12px}.game-pill.locked{opacity:.55}#setup h1{font-family:Georgia,serif;color:#f6d69a;font-size:30px}
+
+/* Phase 31: paced showdown reveals; accessible static presentation for reduced motion */
+.showdown-stage{margin:12px auto;max-width:900px;padding:14px;border:2px solid #e6bd71;border-radius:16px;background:linear-gradient(130deg,#15180f,#493116);color:#ffebba;text-align:center;box-shadow:0 12px 40px #0009}
+.showdown-stage[hidden]{display:none}.showdown-stage h2{font:900 clamp(20px,3vw,36px) Georgia,serif;letter-spacing:.06em}.showdown-stage .pot-result{font-size:clamp(15px,2vw,22px);padding:4px}.showdown-stage button{background:#f2cf88;color:#201407;border-radius:10px;padding:10px 16px;font-weight:800;min-height:44px}
+.reveal-winner{border-color:#fbd889!important;box-shadow:0 0 25px #f9c76c88!important}.reveal-card{animation:flip-in .48s both}.reveal-pending{opacity:.4}.reveal-pending .card{visibility:hidden}@keyframes flip-in{from{opacity:0;transform:rotateY(90deg)}to{opacity:1;transform:rotateY(0)}}
+@media(prefers-reduced-motion:reduce){.reveal-card{animation:none!important}}
 </style>
 
 <style>
@@ -99,7 +105,8 @@ header{position:relative;z-index:3;box-shadow:0 12px 40px #0006}
   <div id="currentBet" class="text-emerald-50 text-sm mt-1">Current bet: 0</div>
  </div>
  <div class="table-caption">PRIVATE TABLE · PLAY CHIPS ONLY · NO REAL-MONEY WAGERING</div><div id="message" class="text-center text-amber-300 font-bold my-4 min-h-6"></div>
- <div id="players" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5"></div>
+ <section id="showdownStage" class="showdown-stage" aria-live="polite" hidden><h2>THE SHOWDOWN</h2><div class="showdown-details"></div><button type="button" onclick="stopRevealTimers();revealVisibleCount=publicState?.showdown?.revealed?.length||0;updateRevealSeats();renderShowdownStage(publicState)">Skip reveal</button></section>
+<div id="players" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5"></div>
  <section id="controller" class="hidden bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5">
   <div class="flex items-center justify-between gap-3 mb-3"><h2 class="font-black text-xl">Your hand</h2><div id="turnBadge" class="text-sm text-zinc-400">Waiting…</div></div>
   <div id="hole" class="flex flex-wrap gap-3 mb-4"></div>
@@ -180,7 +187,7 @@ for(let i=1;i<=16;i++){
 
 const $ = id => document.getElementById(id);
 $("gameSelect").onchange = e => {
- if(!isHost)return;
+ if(!isHost && publicState?.hostId !== playerId)return;
  socket.emit("select-game",{roomCode,gameType:e.target.value},res=>{
   if(!res?.ok)alert(res?.error||"Could not change game");
  });
@@ -289,9 +296,49 @@ setInterval(() => {
   badge.textContent = `YOUR TURN · ${seconds}s`;
  }
 }, 250);
+let revealTimers = [];
+let revealHandKey = null;
+let revealVisibleCount = 0;
+function stopRevealTimers(){ for(const timer of revealTimers)clearTimeout(timer); revealTimers=[]; }
+function revealDelay(){return window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:1500;}
+function renderShowdownStage(state){
+ const stage = document.getElementById('showdownStage');
+ if(!stage)return;
+ const showdown=state.showdown;
+ if(!showdown){stopRevealTimers();revealHandKey=null;revealVisibleCount=0;stage.hidden=true;return;}
+ stage.hidden=false;
+ const reveals=showdown.revealed||[];
+ const key=`${state.code}:${showdown.handNumber}:${state.gameType}`;
+ if(key!==revealHandKey){
+   stopRevealTimers();revealHandKey=key;revealVisibleCount=revealDelay()===0?reveals.length:0;
+   reveals.forEach((_,i)=>revealTimers.push(setTimeout(()=>{revealVisibleCount=i+1;updateRevealSeats();if(i===reveals.length-1)renderShowdownStage(publicState);},(i+1)*revealDelay())));
+ }
+ const complete=revealVisibleCount>=reveals.length;
+ const title=stage.querySelector('h2');title.textContent=complete?'WINNERS & POT AWARDS':'THE SHOWDOWN';
+ const details=stage.querySelector('.showdown-details');details.replaceChildren();
+ if(complete){
+  for(const pot of showdown.pots||[]){const line=document.createElement('div');line.className='pot-result';line.textContent=`${pot.type}: ${pot.amount} chips → ${pot.winners.map(w=>w.name).join(' & ')}`;details.append(line);}
+  if(!(showdown.pots||[]).length){const line=document.createElement('div');line.className='pot-result';line.textContent=showdown.winners.map(w=>`${w.name} wins ${w.amount} chips`).join(' · ');details.append(line);}
+ }else{details.textContent=`Revealing ${revealVisibleCount} of ${reveals.length} hands…`;}
+ stage.querySelector('button').hidden=complete;
+}
+function updateRevealSeats(){
+ const showdown=publicState?.showdown;if(!showdown)return;
+ const revealList=showdown.revealed||[];
+ document.querySelectorAll('#players .seat').forEach(seat=>{
+  const id=seat.dataset.playerId;const index=revealList.findIndex(r=>r.id===id);
+  const panel=seat.querySelector('.reveal-panel');if(!panel)return;
+  const visible=index>=0&&index<revealVisibleCount;
+  panel.classList.toggle('reveal-pending',!visible);
+  panel.setAttribute('aria-hidden',String(!visible));
+  seat.classList.toggle('reveal-winner',visible&&!!revealList[index]?.amount);
+ });
+}
 socket.on("update-tv", state => {
  if (roomCode && state.code !== roomCode) return;
  publicState = state;
+ const delegatedHost = !!(playerId && state.hostId === playerId && state.hostIsDelegate);
+ if (!isHost && delegatedHost) { $("startBtn").classList.remove("hidden"); $("pauseBtn").classList.remove("hidden"); }
  if (!roomCode) {
   const wanted = new URLSearchParams(location.search).get("room");
   if (wanted && wanted.toUpperCase() === state.code) return;
@@ -302,14 +349,16 @@ socket.on("update-tv", state => {
  $("currentBet").textContent = `Current bet: ${state.currentBet}`;
  $("streetLabel").textContent = state.street.toUpperCase();
  $("message").textContent = state.message || "";
- $("pauseBtn").classList.toggle("hidden", !isHost);
+ $("pauseBtn").classList.toggle("hidden", !(isHost || delegatedHost));
+ $("startBtn").classList.toggle("hidden", !(isHost || delegatedHost));
  $("pauseBtn").textContent = state.paused ? "Resume table" : "Pause table";
- $("dealNowBtn").classList.toggle("hidden", isHost || state.status === "playing" || state.paused);
+ $("dealNowBtn").classList.toggle("hidden", isHost || delegatedHost || state.status === "playing" || state.paused);
  $("nextHandCountdown").textContent = state.paused ? "TABLE PAUSED" : "";
  const community = state.community || [];
  $("community").replaceChildren(...(["draw","blackjack","brag"].includes(state.gameType) ? [] : Array.from({length:5},(_,i)=>community[i] ? cardEl(community[i]) : cardEl(null,true))));
  $("players").replaceChildren(...state.players.map(p => {
   const seat = document.createElement("div");
+  seat.dataset.playerId=p.id;
   seat.className = "seat " + (p.isTurn ? "playing-pulse border-amber-300" : "");
   const status = p.folded ? "FOLDED" : p.allIn ? "ALL-IN" : !p.connected ? "DISCONNECTED" : p.isTurn ? "YOUR TURN" : "ACTIVE";
   seat.innerHTML = `<div class="seat-identity"><img class="seat-avatar" src="${avatarUrl(p.avatar)}" alt="${avatarNames[(p.avatar||1)-1] || "Player"} avatar"/><div class="min-w-0"><div class="font-bold truncate">${p.isDealer ? "🔘 " : ""}${escapeHtml(p.name)}</div><div class="text-emerald-300 font-black">${p.stack} chips · ${p.rebuys || 0} rebuys</div><div class="text-xs ${p.folded ? "text-rose-400" : p.allIn ? "text-amber-300" : "text-zinc-400"}">${status}</div><div class="text-xs text-zinc-400">Bet ${p.roundBet}</div></div></div>`;
@@ -317,7 +366,7 @@ socket.on("update-tv", state => {
   const reveal = state.showdown?.revealed?.find(r => r.id === p.id);
   if (reveal) {
     const revealPanel = document.createElement("div");
-    revealPanel.className = "mt-2 rounded-lg border border-amber-400/70 bg-black/60 p-2";
+    revealPanel.className = "reveal-panel mt-2 rounded-lg border border-amber-400/70 bg-black/60 p-2";
     const title = document.createElement("div");
     title.className = "text-amber-200 font-bold text-sm";
     title.textContent = `${reveal.handName}${reveal.amount ? ` · +${reveal.amount} chips` : ""}`;
@@ -329,9 +378,10 @@ socket.on("update-tv", state => {
   }
   return seat;
  }));
+ renderShowdownStage(state);updateRevealSeats();
  $("gameSelect").value = state.gameType || "holdem";
- $("gameSelect").disabled = !isHost || state.status === "playing";
- if (isHost) $("startBtn").textContent = state.status === "complete" ? "Deal next hand" : state.status === "playing" ? "Hand in progress" : "Start hand";
+ $("gameSelect").disabled = !(isHost || delegatedHost) || state.status === "playing";
+ if (isHost || delegatedHost) $("startBtn").textContent = state.status === "complete" ? "Deal next hand" : state.status === "playing" ? "Hand in progress" : "Start hand";
  $("startBtn").disabled = state.status === "playing" || state.players.length < (state.gameType === "blackjack" ? 1 : 2);
  $("startBtn").classList.toggle("opacity-40", $("startBtn").disabled);
 });

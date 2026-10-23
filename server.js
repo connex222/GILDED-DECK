@@ -20,6 +20,32 @@ const rooms = new Map();
 const DISCONNECT_GRACE_MS = 60_000;
 const disconnectTimers = new Map();
 const nextHandTimers = new Map();
+const hostTransferTimers = new Map();
+const HOST_TRANSFER_MS = 30_000;
+function cancelHostTransfer(room) {
+  const timer = hostTransferTimers.get(room.code);
+  if (timer) clearTimeout(timer);
+  hostTransferTimers.delete(room.code);
+}
+function transferHost(room) {
+  hostTransferTimers.delete(room.code);
+  if (room.hostId || room.hostDisconnectedAt == null) return false;
+  const successor = room.players.find(p => p.connected && p.id && io.sockets.sockets.has(p.id));
+  if (!successor) return false;
+  room.hostId = successor.id;
+  room.hostIsDelegate = true;
+  room.message = `${successor.name} is temporarily hosting this table`;
+  emitRoom(room);
+  return true;
+}
+function scheduleHostTransfer(room) {
+  cancelHostTransfer(room);
+  room.hostDisconnectedAt = Date.now();
+  const timer = setTimeout(() => transferHost(room), HOST_TRANSFER_MS);
+  timer.unref?.();
+  hostTransferTimers.set(room.code, timer);
+}
+
 const NEXT_HAND_MS = 10_000;
 function cancelNextHand(room) {
   const timer = nextHandTimers.get(room.code);
@@ -242,7 +268,7 @@ function roomPublic(room) {
     minRaise: room.minRaise, street: room.street, message: room.message,
     dealerIndex: room.dealerIndex, turnId: room.players[room.turnIndex]?.id || null,
     handNumber: room.handNumber, drawCount: room.players.filter(p=>p.drew).length, smallBlind: room.smallBlind, bigBlind: room.bigBlind,
-    winners: room.winners || [], showdown: room.status === "complete" ? (room.showdown || null) : null, lastAction: room.lastAction || "", turnDeadline: room.turnDeadline || null, nextHandDeadline: room.nextHandDeadline || null, paused: !!room.paused
+    winners: room.winners || [], showdown: room.status === "complete" ? (room.showdown || null) : null, lastAction: room.lastAction || "", turnDeadline: room.turnDeadline || null, nextHandDeadline: room.nextHandDeadline || null, paused: !!room.paused, hostIsDelegate: !!room.hostIsDelegate
   };
 }
 function emitRoom(room) {
@@ -270,7 +296,7 @@ function createRoom(hostId) {
   do { roomCode = code(); } while (rooms.has(roomCode));
   const room = {
     code: roomCode, hostId, hostToken: crypto.randomBytes(24).toString("hex"), players: [], status: "lobby", gameType: "holdem", deck: [], community: [],
-    pot: 0, currentBet: 0, minRaise: 20, turnIndex: -1, dealerIndex: 0, dealerToken: null, paused: false, nextHandDeadline: null,
+    pot: 0, currentBet: 0, minRaise: 20, turnIndex: -1, dealerIndex: 0, dealerToken: null, paused: false, nextHandDeadline: null, hostIsDelegate: false, hostDisconnectedAt: null,
     dealerCards: [], street: "lobby", message: "Waiting for players to join", handNumber: 0,
     smallBlind: 10, bigBlind: 20, winners: [], lastAction: "", actedThisStreet: new Set()
   };
@@ -399,6 +425,7 @@ function settlePots(room, winnersByHand) {
   const levels = [...new Set(room.players.map(p => p.committed).filter(v => v > 0))].sort((a,b)=>a-b);
   let previous = 0;
   const awards = new Map();
+  const potResults = [];
   for (const level of levels) {
     const contributors = room.players.filter(p => p.committed >= level);
     const amount = (level - previous) * contributors.length;
@@ -418,6 +445,7 @@ function settlePots(room, winnersByHand) {
       winners = best.map(x => x.p);
     }
     if (winners.length) {
+      potResults.push({ type: potResults.length === 0 ? "Main pot" : `Side pot ${potResults.length}`, amount, winners: winners.map(p => ({ id: p.id, name: p.name })) });
       const share = Math.floor(amount / winners.length);
       let remainder = amount - share * winners.length;
       winners.forEach(p => {
@@ -426,6 +454,7 @@ function settlePots(room, winnersByHand) {
     }
     previous = level;
   }
+  room.potResults = potResults;
   for (const p of room.players) p.stack += awards.get(p.id) || 0;
   return [...awards.entries()].filter(([, amount]) => amount > 0).map(([id, amount]) => ({
     id, name: room.players.find(p => p.id === id)?.name, amount
@@ -447,12 +476,13 @@ function finishHand(room, winners) {
   }
   const contested = activePlayers(room).length > 1;
   room.showdown = contested ? {
+    handNumber: room.handNumber, pots: room.potResults || [],
     revealed: room.players.filter(p => !p.folded && p.hole.length).map(p => ({
       id: p.id, name: p.name, cards: p.hole, handName: hands.get(p.id)?.descr || "Hand",
       amount: room.winners.find(w => w.id === p.id)?.amount || 0
     })),
     winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount }))
-  } : { revealed: [], winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount })) };
+  } : { revealed: [], winners: room.winners.map(w => ({ id: w.id, name: w.name, amount: w.amount })), handNumber: room.handNumber, pots: [] };
   room.pot = 0;
   room.status = "complete";
   room.street = "showdown";
@@ -515,7 +545,7 @@ function blackjackStart(room){
   const seated=room.players.filter(p=>p.connected&&!p.sitOutNext&&p.stack>=20);
   if(!seated.length){room.message="A player needs at least 20 chips";return emitRoom(room);}
   room.status="playing";room.handNumber++;
-  room.deck=makeDeck();room.community=[];room.dealerCards=[room.deck.pop(),room.deck.pop()];room.street="blackjack";room.pot=0;room.currentBet=0;room.winners=[];room.showdown=null;
+  room.deck=makeDeck();room.community=[];room.dealerCards=[room.deck.pop(),room.deck.pop()];room.street="blackjack";room.pot=0;room.currentBet=0;room.winners=[];room.showdown=null;room.potResults=[];
   for(const p of room.players){p.hole=[];p.blackjackResult="";p.blackjackStake=0;p.folded=false;p.roundBet=0;p.committed=0;
     p.sittingOut = !p.connected || p.sitOutNext || p.stack < 20;
     if(!p.sittingOut){p.stack-=20;p.blackjackStake=20;p.hole=[room.deck.pop(),room.deck.pop()];
@@ -558,7 +588,7 @@ function startHand(room) {
   });
   room.status = "playing"; room.handNumber++; room.deck = makeDeck(); room.community = [];
   room.pot = 0; room.currentBet = room.bigBlind; room.minRaise = room.bigBlind;
-  room.winners = []; room.showdown = null; room.lastAction = ""; room.bragActions = 0; room.street = room.gameType === "draw" ? "pre-draw" : room.gameType === "brag" ? "brag-betting" : "pre-flop"; room.actedThisStreet = new Set();
+  room.winners = []; room.showdown = null; room.potResults = []; room.lastAction = ""; room.bragActions = 0; room.street = room.gameType === "draw" ? "pre-draw" : room.gameType === "brag" ? "brag-betting" : "pre-flop"; room.actedThisStreet = new Set();
   eligible.forEach(p => {
     p.hole = Array.from({length: room.gameType === "draw" ? 5 : room.gameType === "brag" ? 3 : room.gameType === "omaha" ? 4 : 2},()=>room.deck.pop()); p.drew=false; p.committed = 0; p.roundBet = 0;
     p.folded = false; p.allIn = false; p.acted = false; p.bragSeen = false;
@@ -718,8 +748,11 @@ io.on("connection", socket => {
     if(token === room.hostToken){
       if(socketHasSeat(rooms, socket.id) || [...rooms.values()].some(r => r.hostId === socket.id && r !== room))
         return typeof callback === "function" && callback({ok:false,error:"This device is already assigned to another table."});
-      if(room.hostId && io.sockets.sockets.has(room.hostId) && room.hostId !== socket.id)
+      if(room.hostId && io.sockets.sockets.has(room.hostId) && room.hostId !== socket.id && !room.hostIsDelegate)
         return typeof callback === "function" && callback({ok:false,error:"Host is already connected"});
+      cancelHostTransfer(room);
+      room.hostDisconnectedAt = null;
+      room.hostIsDelegate = false;
       room.hostId=socket.id;socket.join(room.code);
       if(typeof callback === "function")callback({ok:true,roomCode:room.code,playerId:socket.id,isHost:true});
       emitRoom(room);return;
@@ -731,6 +764,7 @@ io.on("connection", socket => {
     if(socketHasSeat(rooms, socket.id) && player.id !== socket.id) return typeof callback === "function" && callback({ok:false,error:"This device already occupies another seat."});
     cancelDisconnectTimer(player.resumeToken);
     player.id=socket.id;player.connected=true;socket.join(room.code);
+    if (!room.hostId && room.hostDisconnectedAt != null && Date.now() - room.hostDisconnectedAt >= HOST_TRANSFER_MS) transferHost(room);
     if(typeof callback === "function")callback({ok:true,roomCode:room.code,playerId:socket.id,isHost:false});
     emitRoom(room);
   });
@@ -754,7 +788,7 @@ io.on("connection", socket => {
     const room = rooms.get(String(roomCode || "").toUpperCase());
     if(!room || room.hostId !== socket.id || room.status === "playing") return typeof callback === "function" && callback({ok:false,error:"Only the host may change games between hands."});
     if(!["holdem","omaha","draw","blackjack","brag"].includes(gameType)) return typeof callback === "function" && callback({ok:false,error:"Game unavailable."});
-    cancelNextHand(room);room.gameType=gameType;room.status="lobby";room.street="lobby";room.community=[];room.winners=[];room.showdown=null;
+    cancelNextHand(room);room.gameType=gameType;room.status="lobby";room.street="lobby";room.community=[];room.winners=[];room.showdown=null;room.potResults=[];
     room.dealerCards=[];room.message=gameType==="blackjack"?"Blackjack selected — fixed 20-chip stakes, dealer stands on 17":gameType==="omaha"?"Omaha selected — exactly two hole cards must play":gameType==="brag"?"Three-Card Brag — prial, running flush, run, flush, pair, high card":gameType==="draw"?"Five-Card Draw selected — exchange up to three cards":"Texas Hold’em selected";
     emitRoom(room);
     if(typeof callback === "function") callback({ok:true});
@@ -821,7 +855,7 @@ io.on("connection", socket => {
   });
   socket.on("disconnect", () => {
     for (const room of rooms.values()) {
-      if (room.hostId === socket.id) { room.hostId = null; room.message = "Host disconnected; reconnect with the original host device"; emitRoom(room); continue; }
+      if (room.hostId === socket.id) { if (room.hostIsDelegate) { const delegate = room.players.find(p => p.id === socket.id); if (delegate) { delegate.connected = false; if (room.status === "playing" && !delegate.sittingOut) scheduleDisconnect(room, delegate); } } room.hostId = null; room.hostIsDelegate = false; scheduleHostTransfer(room); room.message = "Host disconnected — another player may take over in 30 seconds"; emitRoom(room); continue; }
       const p = room.players.find(x => x.id === socket.id);
       if (!p) continue;
       p.connected = false;
