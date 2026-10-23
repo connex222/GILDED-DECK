@@ -702,3 +702,10 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - Replaced the release command with `test/strict-release.cjs`, which verifies dependencies, executes the entire `*.test.js` suite and fails if any tests are skipped, if the test process fails, or if the TAP summary is missing.
 - The normal offline `npm test` remains available for unit checks; it does **not** certify multiplayer.
 - Deployment remains blocked until the Phase 44 files are committed to GitHub and the strict CI check passes with zero skipped tests.
+
+## Phase 45 — Live deployment smoke checks
+
+- Added `npm run test:smoke` to verify a specified live HTTPS site's `/health` JSON and homepage without creating a room, sending socket events or changing game state.
+- Example: `GILDED_SMOKE_URL=https://gilded-deck.onrender.com npm run test:smoke`.
+- This check confirms basic HTTP availability only; it does **not** certify game rules, live Socket.IO connections, mobile usability, or the six skipped integration tests.
+- Keep `npm run test:release` as the separate, strict zero-skips release gate. The real-device multiplayer trial remains required before final sign-off.
