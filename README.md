@@ -724,3 +724,11 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - It sends only the standard Socket.IO namespace handshake and protocol pong; it does not create rooms, place bets or modify game state.
 - Added deterministic mock-WebSocket tests for successful handshake, malformed opening frames and premature disconnection.
 - **This is a transport smoke test, not multiplayer certification.** Six full Socket.IO integration tests remain to be executed in a dependency-enabled CI environment, with zero skips required for release approval.
+
+
+## Phase 48 — Six-player November acceptance preparation
+
+- Added `test/phase48-six-player.test.js`: six real Socket.IO player connections, unique seat and resume credentials, five-game lobby selection, six-seat Brag start, private-card isolation, public credential redaction and 6,000-chip conservation.
+- The new integration test is included in `npm test` and the strict zero-skips `npm run test:release` gate. It requires installed runtime dependencies and Node.js 22+.
+- **November six-person acceptance checklist:** connect six separate phones; open the host/TV display on a separate screen; confirm each person joins exactly once; verify every player can see their own hand but not another player's; complete a round of each of the five games; check chip totals after folds, ties and rebuys; disconnect and reconnect one phone; verify the turn timer and host recovery; test sound on TV and phones, accessibility, landscape/portrait layout and large-screen legibility.
+- Record device models, browsers, observed results and any failures during the actual session. This automated rehearsal is not a substitute for the November six-person test.
