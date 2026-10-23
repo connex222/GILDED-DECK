@@ -732,3 +732,11 @@ Set `ALLOWED_ORIGINS=https://YOUR-RENDER-HOST.onrender.com` to the real deployed
 - The new integration test is included in `npm test` and the strict zero-skips `npm run test:release` gate. It requires installed runtime dependencies and Node.js 22+.
 - **November six-person acceptance checklist:** connect six separate phones; open the host/TV display on a separate screen; confirm each person joins exactly once; verify every player can see their own hand but not another player's; complete a round of each of the five games; check chip totals after folds, ties and rebuys; disconnect and reconnect one phone; verify the turn timer and host recovery; test sound on TV and phones, accessibility, landscape/portrait layout and large-screen legibility.
 - Record device models, browsers, observed results and any failures during the actual session. This automated rehearsal is not a substitute for the November six-person test.
+
+
+## Phase 49 — November six-player release preparation
+
+- Restored the GitHub Actions release workflow directly in GitHub after confirming it was missing from the deployed repository. The workflow must be present under `.github/workflows/release-check.yml` for GitHub to run it.
+- Added `npm run test:readiness` to produce a machine-readable, read-only six-player preparation report. It checks required source/test files, one consolidated README, and installed multiplayer dependencies without creating rooms or claiming live acceptance.
+- Added a regression test for the readiness report.
+- Release acceptance requires `npm run test:release` with zero skips in GitHub Actions, the deployment smoke check, and the November six-player session. A successful Render build is not evidence that all game rules passed.
